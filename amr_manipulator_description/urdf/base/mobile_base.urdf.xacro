@@ -1,0 +1,119 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <material name="amr_body"><color rgba="0.2 0.35 0.6 1"/></material>
+  <material name="amr_black"><color rgba="0.1 0.1 0.1 1"/></material>
+
+  <!-- Inertia (prefix amr_) -->
+  <xacro:macro name="amr_box_inertial" params="mass x y z *origin">
+    <inertial>
+      <xacro:insert_block name="origin"/>
+      <mass value="${mass}"/>
+      <inertia ixx="${mass*(y*y+z*z)/12}" ixy="0" ixz="0"
+               iyy="${mass*(x*x+z*z)/12}" iyz="0"
+               izz="${mass*(x*x+y*y)/12}"/>
+    </inertial>
+  </xacro:macro>
+
+  <xacro:macro name="amr_wheel" params="name y_pos radius width mass">
+    <link name="${name}_link">
+      <visual>
+        <origin xyz="0 0 0" rpy="${pi/2} 0 0"/>
+        <geometry><cylinder radius="${radius}" length="${width}"/></geometry>
+        <material name="amr_black"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="${pi/2} 0 0"/>
+        <geometry><cylinder radius="${radius}" length="${width}"/></geometry>
+      </collision>
+      <inertial>
+        <mass value="${mass}"/>
+        <inertia ixx="${mass*(3*radius*radius+width*width)/12}" ixy="0" ixz="0"
+                 iyy="${mass*radius*radius/2}" iyz="0"
+                 izz="${mass*(3*radius*radius+width*width)/12}"/>
+      </inertial>
+    </link>
+    <joint name="${name}_joint" type="continuous">
+      <parent link="base_link"/>
+      <child link="${name}_link"/>
+      <origin xyz="0 ${y_pos} 0" rpy="0 0 0"/>
+      <axis xyz="0 1 0"/>
+    </joint>
+  </xacro:macro>
+
+  <xacro:macro name="amr_caster" params="name x_pos z_pos radius mass">
+    <link name="${name}_link">
+      <visual>
+        <geometry><sphere radius="${radius}"/></geometry>
+        <material name="amr_black"/>
+      </visual>
+      <collision>
+        <geometry><sphere radius="${radius}"/></geometry>
+      </collision>
+      <inertial>
+        <mass value="${mass}"/>
+        <inertia ixx="${0.4*mass*radius*radius}" ixy="0" ixz="0"
+                 iyy="${0.4*mass*radius*radius}" iyz="0"
+                 izz="${0.4*mass*radius*radius}"/>
+      </inertial>
+    </link>
+    <joint name="${name}_joint" type="fixed">
+      <parent link="base_link"/>
+      <child link="${name}_link"/>
+      <origin xyz="${x_pos} 0 ${z_pos}" rpy="0 0 0"/>
+    </joint>
+  </xacro:macro>
+
+  <xacro:macro name="mobile_base" params="
+      chassis_length:=0.8 chassis_width:=0.5 chassis_height:=0.2 chassis_mass:=50.0
+      ground_clearance:=0.05
+      wheel_radius:=0.1 wheel_width:=0.05 wheel_mass:=2.0 wheel_separation:=0.58
+      caster_radius:=0.05 caster_mass:=0.5 caster_x:=0.3
+      arm_mount_x:=0.15">
+
+    <!-- base_footprint (ground) -> base_link (wheels axis) -->
+    <link name="base_footprint"/>
+    <joint name="base_footprint_joint" type="fixed">
+      <parent link="base_footprint"/>
+      <child link="base_link"/>
+      <origin xyz="0 0 ${wheel_radius}" rpy="0 0 0"/>
+    </joint>
+    <link name="base_link"/>
+
+    <!-- Chassis: has mass e inertia -->
+    <link name="chassis_link">
+      <visual>
+        <geometry><box size="${chassis_length} ${chassis_width} ${chassis_height}"/></geometry>
+        <material name="amr_body"/>
+      </visual>
+      <collision>
+        <geometry><box size="${chassis_length} ${chassis_width} ${chassis_height}"/></geometry>
+      </collision>
+      <xacro:amr_box_inertial mass="${chassis_mass}" x="${chassis_length}" y="${chassis_width}" z="${chassis_height}">
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+      </xacro:amr_box_inertial>
+    </link>
+    <joint name="chassis_joint" type="fixed">
+      <parent link="base_link"/>
+      <child link="chassis_link"/>
+      <origin xyz="0 0 ${ground_clearance + chassis_height/2 - wheel_radius}" rpy="0 0 0"/>
+    </joint>
+
+    <!-- Motored Wheels -->
+    <xacro:amr_wheel name="wheel_left"  y_pos="${ wheel_separation/2}" radius="${wheel_radius}" width="${wheel_width}" mass="${wheel_mass}"/>
+    <xacro:amr_wheel name="wheel_right" y_pos="${-wheel_separation/2}" radius="${wheel_radius}" width="${wheel_width}" mass="${wheel_mass}"/>
+
+    <!-- Caster -->
+    <xacro:amr_caster name="caster_front" x_pos="${ caster_x}" z_pos="${caster_radius - wheel_radius}" radius="${caster_radius}" mass="${caster_mass}"/>
+    <xacro:amr_caster name="caster_rear"  x_pos="${-caster_x}" z_pos="${caster_radius - wheel_radius}" radius="${caster_radius}" mass="${caster_mass}"/>
+
+    <!-- Frame mount arm, on top of chassis -->
+    <link name="arm_mount_link"/>
+    <joint name="arm_mount_joint" type="fixed">
+      <parent link="base_link"/>
+      <child link="arm_mount_link"/>
+      <origin xyz="${arm_mount_x} 0 ${ground_clearance + chassis_height - wheel_radius}" rpy="0 0 0"/>
+    </joint>
+
+  </xacro:macro>
+</robot>

@@ -1,0 +1,37 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="amr_manipulator">
+  <xacro:include filename="$(find amr_manipulator_description)/urdf/base/mobile_base.urdf.xacro"/>
+  <xacro:include filename="$(find amr_manipulator_description)/urdf/arm/ur_macro.xacro"/>
+  <xacro:include filename="$(find amr_manipulator_description)/urdf/gripper/parallel_gripper.urdf.xacro"/>
+  <xacro:include filename="$(find amr_manipulator_description)/urdf/sensors/lidar_2d.urdf.xacro"/>
+  <xacro:include filename="$(find amr_manipulator_description)/urdf/sensors/rgbd_camera.urdf.xacro"/>
+  <xacro:property name="ur_cfg" value="$(find amr_manipulator_description)/config/arm/ur5e"/>
+
+  <xacro:mobile_base/>
+
+  <xacro:ur_robot
+    name="ur5e"
+    tf_prefix="ur_"
+    parent="arm_mount_link"
+    joint_limits_parameters_file="${ur_cfg}/joint_limits.yaml"
+    kinematics_parameters_file="${ur_cfg}/default_kinematics.yaml"
+    physical_parameters_file="${ur_cfg}/physical_parameters.yaml"
+    visual_parameters_file="${ur_cfg}/visual_parameters.yaml"
+    ur_type="ur5e"
+    generate_ros2_control_tag="false">
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </xacro:ur_robot>
+
+  <xacro:parallel_gripper prefix="gripper_" parent="ur_tool0">
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </xacro:parallel_gripper>
+
+  <xacro:lidar_2d name="lidar" parent="base_link">
+    <origin xyz="0.34 0 0.175" rpy="0 0 0"/>
+  </xacro:lidar_2d>
+
+  <xacro:rgbd_camera name="camera" parent="gripper_base_link">
+    <origin xyz="0.0425 0 0.03" rpy="0 ${-pi/2} 0"/>
+  </xacro:rgbd_camera>
+
+</robot>

@@ -1,0 +1,41 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <material name="camera_body"><color rgba="0.75 0.75 0.78 1"/></material>
+
+  <!-- RGB-D camera modeled as a box (approx. 90 x 25 x 25 mm).
+       camera_link follows REP-103: x forward, y left, z up. -->
+  <xacro:macro name="rgbd_camera" params="name:=camera parent *origin
+      size_x:=0.025 size_y:=0.09 size_z:=0.025 mass:=0.072">
+    <joint name="${name}_joint" type="fixed">
+      <xacro:insert_block name="origin"/>
+      <parent link="${parent}"/>
+      <child link="${name}_link"/>
+    </joint>
+
+    <link name="${name}_link">
+      <visual>
+        <geometry><box size="${size_x} ${size_y} ${size_z}"/></geometry>
+        <material name="camera_body"/>
+      </visual>
+      <collision>
+        <geometry><box size="${size_x} ${size_y} ${size_z}"/></geometry>
+      </collision>
+      <inertial>
+        <mass value="${mass}"/>
+        <inertia ixx="${mass*(size_y*size_y+size_z*size_z)/12}" ixy="0" ixz="0"
+                 iyy="${mass*(size_x*size_x+size_z*size_z)/12}" iyz="0"
+                 izz="${mass*(size_x*size_x+size_y*size_y)/12}"/>
+      </inertial>
+    </link>
+
+    <!-- Optical frame (image convention): z forward, x right, y down.
+         Perception code (back-projection of depth pixels) works in this frame. -->
+    <link name="${name}_color_optical_frame"/>
+    <joint name="${name}_optical_joint" type="fixed">
+      <parent link="${name}_link"/>
+      <child link="${name}_color_optical_frame"/>
+      <origin xyz="0 0 0" rpy="${-pi/2} 0 ${-pi/2}"/>
+    </joint>
+  </xacro:macro>
+</robot>
