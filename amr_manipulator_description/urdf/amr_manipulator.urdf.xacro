@@ -6,8 +6,16 @@
   <xacro:include filename="$(find amr_manipulator_description)/urdf/sensors/lidar_2d.urdf.xacro"/>
   <xacro:include filename="$(find amr_manipulator_description)/urdf/sensors/rgbd_camera.urdf.xacro"/>
   <xacro:property name="ur_cfg" value="$(find amr_manipulator_description)/config/arm/ur5e"/>
+  <xacro:arg name="use_sim" default="false"/>
 
   <xacro:mobile_base/>
+
+  <!-- UR5e joint dynamics, used by the Gazebo physics (damping in N*m*s/rad, friction in N*m).
+       Round numbers chosen so the arm settles in a few seconds: NOT identified on a real UR5e. -->
+  <xacro:property name="ur_damping_large" value="2.0"/>
+  <xacro:property name="ur_damping_wrist" value="0.5"/>
+  <xacro:property name="ur_friction_large" value="1.0"/>
+  <xacro:property name="ur_friction_wrist" value="0.3"/>
 
   <xacro:ur_robot
     name="ur5e"
@@ -18,7 +26,11 @@
     physical_parameters_file="${ur_cfg}/physical_parameters.yaml"
     visual_parameters_file="${ur_cfg}/visual_parameters.yaml"
     ur_type="ur5e"
-    generate_ros2_control_tag="false">
+    generate_ros2_control_tag="false"
+    joint_damping_large="${ur_damping_large}"
+    joint_damping_wrist="${ur_damping_wrist}"
+    joint_friction_large="${ur_friction_large}"
+    joint_friction_wrist="${ur_friction_wrist}">
     <origin xyz="0 0 0" rpy="0 0 0"/>
   </xacro:ur_robot>
 
@@ -33,5 +45,11 @@
   <xacro:rgbd_camera name="camera" parent="gripper_base_link">
     <origin xyz="0.0425 0 0.03" rpy="0 ${-pi/2} 0"/>
   </xacro:rgbd_camera>
+
+  <xacro:if value="$(arg use_sim)">
+    <xacro:include filename="$(find amr_manipulator_description)/urdf/sim/gazebo_physics.xacro"/>
+    <xacro:include filename="$(find amr_manipulator_description)/urdf/sim/gazebo_plugins.xacro"/>
+    <xacro:include filename="$(find amr_manipulator_description)/urdf/sim/ros2_control.xacro"/>
+  </xacro:if>
 
 </robot>

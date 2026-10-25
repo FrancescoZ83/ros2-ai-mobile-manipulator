@@ -1,0 +1,28 @@
+controller_manager:
+  ros__parameters:
+    # Controller update rate (Hz). Must not exceed the 1000 Hz of the simulation step
+    update_rate: 500
+    use_sim_time: true
+
+    joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
+
+    arm_model_controller:
+      type: amr_manipulator_control/ArmModelController
+
+arm_model_controller:
+  ros__parameters:
+    joints: [ur_shoulder_pan_joint, ur_shoulder_lift_joint, ur_elbow_joint,
+             ur_wrist_1_joint, ur_wrist_2_joint, ur_wrist_3_joint]
+    chain_root: base_link
+    chain_tip: gripper_tcp
+    robot_description_node: robot_state_publisher
+    extra_mass: 0.272
+    gravity_scale: 1.0
+    pd_scale: 1.0
+    ramp_time: 5.0
+    target_positions: [0.0, -1.5708, 1.5708, -1.5708, -1.5708, 0.0]
+    kp: [150.0, 150.0, 100.0, 30.0, 30.0, 5.0]
+    kd: [40.0, 40.0, 25.0, 3.0, 3.0, 0.1]
+    effort_limits: [150.0, 150.0, 150.0, 28.0, 28.0, 28.0]
+

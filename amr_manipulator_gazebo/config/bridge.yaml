@@ -1,0 +1,37 @@
+# Gazebo <-> ROS 2 bridge: one list item per topic.
+# direction: GZ_TO_ROS | ROS_TO_GZ | BIDIRECTIONAL
+
+# Simulation clock (needed by every node running with use_sim_time)
+- ros_topic_name: "/clock"
+  gz_topic_name: "/clock"
+  ros_type_name: "rosgraph_msgs/msg/Clock"
+  gz_type_name: "ignition.msgs.Clock"
+  direction: GZ_TO_ROS
+
+# Velocity command: ROS -> Gazebo, consumed by the DiffDrive plugin
+- ros_topic_name: "/cmd_vel"
+  gz_topic_name: "/cmd_vel"
+  ros_type_name: "geometry_msgs/msg/Twist"
+  gz_type_name: "ignition.msgs.Twist"
+  direction: ROS_TO_GZ
+
+# Wheel odometry computed by DiffDrive
+- ros_topic_name: "/odom"
+  gz_topic_name: "/odom"
+  ros_type_name: "nav_msgs/msg/Odometry"
+  gz_type_name: "ignition.msgs.Odometry"
+  direction: GZ_TO_ROS
+
+# odom -> base_footprint transform (Gazebo sends a Pose_V, ROS wants a TFMessage)
+- ros_topic_name: "/tf"
+  gz_topic_name: "/tf"
+  ros_type_name: "tf2_msgs/msg/TFMessage"
+  gz_type_name: "ignition.msgs.Pose_V"
+  direction: GZ_TO_ROS
+
+# Wheel joint states (Gazebo sends a Model message, ROS wants a JointState)
+- ros_topic_name: "/joint_states"
+  gz_topic_name: "/wheel_joint_states"
+  ros_type_name: "sensor_msgs/msg/JointState"
+  gz_type_name: "ignition.msgs.Model"
+  direction: GZ_TO_ROS

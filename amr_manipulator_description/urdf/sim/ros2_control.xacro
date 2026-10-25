@@ -1,0 +1,49 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- "Ready" pose: arm folded over the chassis instead of stretched out. Used as initial joint position -->
+  <xacro:property name="ready_shoulder_lift" value="-1.57"/>
+  <xacro:property name="ready_wrist_1" value="-1.57"/>
+
+  <!-- One joint with torque command and full state feedback. limit = max effort in N*m -->
+  <xacro:macro name="effort_joint" params="name limit initial:=0.0">
+    <joint name="${name}">
+      <command_interface name="effort">
+        <param name="min">-${limit}</param>
+        <param name="max">${limit}</param>
+      </command_interface>
+      <state_interface name="position">
+        <param name="initial_value">${initial}</param>
+      </state_interface>
+      <state_interface name="velocity"/>
+      <state_interface name="effort"/>
+    </joint>
+  </xacro:macro>
+
+  <ros2_control name="IgnitionSystem" type="system">
+    <hardware>
+      <plugin>ign_ros2_control/IgnitionSystem</plugin>
+    </hardware>
+
+    <!-- UR5e: 150 N*m on the three large joints, 28 N*m on the wrists -->
+    <xacro:effort_joint name="ur_shoulder_pan_joint" limit="150"/>
+    <xacro:effort_joint name="ur_shoulder_lift_joint" limit="150" initial="${ready_shoulder_lift}"/>
+    <xacro:effort_joint name="ur_elbow_joint" limit="150"/>
+    <xacro:effort_joint name="ur_wrist_1_joint" limit="28" initial="${ready_wrist_1}"/>
+    <xacro:effort_joint name="ur_wrist_2_joint" limit="28"/>
+    <xacro:effort_joint name="ur_wrist_3_joint" limit="28"/>
+
+    <!-- Gripper fingers: same effort limit as in the URDF (N) -->
+    <xacro:effort_joint name="gripper_left_finger_joint" limit="100"/>
+    <xacro:effort_joint name="gripper_right_finger_joint" limit="100"/>
+  </ros2_control>
+
+  <!-- Gazebo side: loads the controller_manager inside the simulator -->
+  <gazebo>
+    <plugin filename="ign_ros2_control-system"
+            name="ign_ros2_control::IgnitionROS2ControlPlugin">
+      <parameters>$(find amr_manipulator_description)/config/controllers/ros2_controllers.yaml</parameters>
+    </plugin>
+  </gazebo>
+
+</robot>

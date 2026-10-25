@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+
+  <!-- Drive wheels: high friction so they grip instead of slipping -->
+  <gazebo reference="wheel_left_link">
+    <mu1>1.0</mu1>
+    <mu2>1.0</mu2>
+  </gazebo>
+  <gazebo reference="wheel_right_link">
+    <mu1>1.0</mu1>
+    <mu2>1.0</mu2>
+  </gazebo>
+
+  <!-- Casters are passive balls: almost no friction so they do not resist turning -->
+  <gazebo reference="caster_front_link">
+    <mu1>0.01</mu1>
+    <mu2>0.01</mu2>
+  </gazebo>
+  <gazebo reference="caster_rear_link">
+    <mu1>0.01</mu1>
+    <mu2>0.01</mu2>
+  </gazebo>
+
+</robot>

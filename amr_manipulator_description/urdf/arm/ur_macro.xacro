@@ -53,6 +53,15 @@
   <xacro:include filename="$(find amr_manipulator_description)/urdf/arm/inc/ur_transmissions.xacro" />
   <xacro:include filename="$(find amr_manipulator_description)/urdf/arm/inc/ur_common.xacro" />
 
+  <!--
+    MODIFIED for amr_manipulator (original: UniversalRobots/Universal_Robots_ROS2_Description, humble):
+    - the include paths point to this package;
+    - new parameters joint_damping_large / joint_damping_wrist / joint_friction_large /
+      joint_friction_wrist set the <dynamics> of the joints used by the Gazebo physics
+      (large = shoulder_pan, shoulder_lift, elbow; wrist = wrist_1, wrist_2, wrist_3).
+      Default 0.0 = upstream behaviour. Damping in N*m*s/rad, friction in N*m.
+  -->
+
   <xacro:macro name="ur_robot" params="
     name
     tf_prefix
@@ -72,6 +81,10 @@
     fake_sensor_commands:=false
     sim_gazebo:=false
     sim_ignition:=false
+    joint_damping_large:=0.0
+    joint_damping_wrist:=0.0
+    joint_friction_large:=0.0
+    joint_friction_wrist:=0.0
     headless_mode:=false
     initial_positions:=${dict(shoulder_pan_joint=0.0,shoulder_lift_joint=-1.57,elbow_joint=0.0,wrist_1_joint=-1.57,wrist_2_joint=0.0,wrist_3_joint=0.0)}
     use_tool_communication:=false
@@ -371,7 +384,7 @@
       <xacro:if value="${safety_limits}">
          <safety_controller soft_lower_limit="${shoulder_pan_lower_limit + safety_pos_margin}" soft_upper_limit="${shoulder_pan_upper_limit - safety_pos_margin}" k_position="${safety_k_position}" k_velocity="0.0"/>
       </xacro:if>
-      <dynamics damping="0" friction="0"/>
+      <dynamics damping="${joint_damping_large}" friction="${joint_friction_large}"/>
     </joint>
     <joint name="${tf_prefix}shoulder_lift_joint" type="revolute">
       <parent link="${tf_prefix}shoulder_link" />
@@ -383,7 +396,7 @@
       <xacro:if value="${safety_limits}">
          <safety_controller soft_lower_limit="${shoulder_lift_lower_limit + safety_pos_margin}" soft_upper_limit="${shoulder_lift_upper_limit - safety_pos_margin}" k_position="${safety_k_position}" k_velocity="0.0"/>
       </xacro:if>
-      <dynamics damping="0" friction="0"/>
+      <dynamics damping="${joint_damping_large}" friction="${joint_friction_large}"/>
     </joint>
     <joint name="${tf_prefix}elbow_joint" type="revolute">
       <parent link="${tf_prefix}upper_arm_link" />
@@ -395,7 +408,7 @@
       <xacro:if value="${safety_limits}">
          <safety_controller soft_lower_limit="${elbow_joint_lower_limit + safety_pos_margin}" soft_upper_limit="${elbow_joint_upper_limit - safety_pos_margin}" k_position="${safety_k_position}" k_velocity="0.0"/>
       </xacro:if>
-      <dynamics damping="0" friction="0"/>
+      <dynamics damping="${joint_damping_large}" friction="${joint_friction_large}"/>
     </joint>
     <joint name="${tf_prefix}wrist_1_joint" type="revolute">
       <parent link="${tf_prefix}forearm_link" />
@@ -407,7 +420,7 @@
       <xacro:if value="${safety_limits}">
          <safety_controller soft_lower_limit="${wrist_1_lower_limit + safety_pos_margin}" soft_upper_limit="${wrist_1_upper_limit - safety_pos_margin}" k_position="${safety_k_position}" k_velocity="0.0"/>
       </xacro:if>
-      <dynamics damping="0" friction="0"/>
+      <dynamics damping="${joint_damping_wrist}" friction="${joint_friction_wrist}"/>
     </joint>
     <joint name="${tf_prefix}wrist_2_joint" type="revolute">
       <parent link="${tf_prefix}wrist_1_link" />
@@ -419,7 +432,7 @@
       <xacro:if value="${safety_limits}">
          <safety_controller soft_lower_limit="${wrist_2_lower_limit + safety_pos_margin}" soft_upper_limit="${wrist_2_upper_limit - safety_pos_margin}" k_position="${safety_k_position}" k_velocity="0.0"/>
       </xacro:if>
-      <dynamics damping="0" friction="0"/>
+      <dynamics damping="${joint_damping_wrist}" friction="${joint_friction_wrist}"/>
     </joint>
     <joint name="${tf_prefix}wrist_3_joint" type="${wrist_3_joint_type}">
       <parent link="${tf_prefix}wrist_2_link" />
@@ -439,7 +452,7 @@
           <safety_controller k_position="${safety_k_position}" k_velocity="0.0"/>
         </xacro:if>
       </xacro:unless>
-      <dynamics damping="0" friction="0"/>
+      <dynamics damping="${joint_damping_wrist}" friction="${joint_friction_wrist}"/>
     </joint>
 
     <link name="${tf_prefix}ft_frame"/>
