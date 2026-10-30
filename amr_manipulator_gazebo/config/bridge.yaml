@@ -35,3 +35,37 @@
   ros_type_name: "sensor_msgs/msg/JointState"
   gz_type_name: "ignition.msgs.Model"
   direction: GZ_TO_ROS
+
+# 2D LiDAR scan
+- ros_topic_name: "/scan"
+  gz_topic_name: "/scan"
+  ros_type_name: "sensor_msgs/msg/LaserScan"
+  gz_type_name: "ignition.msgs.LaserScan"
+  direction: GZ_TO_ROS
+
+# RGB-D camera (color, depth, intrinsics)
+- ros_topic_name: "/camera/image"
+  gz_topic_name: "/camera/image"
+  ros_type_name: "sensor_msgs/msg/Image"
+  gz_type_name: "ignition.msgs.Image"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "/camera/depth_image"
+  gz_topic_name: "/camera/depth_image"
+  ros_type_name: "sensor_msgs/msg/Image"
+  gz_type_name: "ignition.msgs.Image"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "/camera/camera_info"
+  gz_topic_name: "/camera/camera_info"
+  ros_type_name: "sensor_msgs/msg/CameraInfo"
+  gz_type_name: "ignition.msgs.CameraInfo"
+  direction: GZ_TO_ROS
+
+# Point cloud: disabled for now. At 320x240 it is about 1.2 MB per message and costs a lot of
+# CPU in the bridge. Enable it when perception needs it.
+# - ros_topic_name: "/camera/points"
+#   gz_topic_name: "/camera/points"
+#   ros_type_name: "sensor_msgs/msg/PointCloud2"
+#   gz_type_name: "ignition.msgs.PointCloudPacked"
+#   direction: GZ_TO_ROS

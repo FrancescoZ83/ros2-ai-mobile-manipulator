@@ -126,6 +126,33 @@ The estimate settles at 3.0 kg with an accuracy of about 0.05 kg. At rest it sta
 - Driving is open loop; straight motion comes from the symmetric simulated robot. A real base needs an outer loop (odometry or LiDAR, for example through Nav2).
 - Finger friction uses the simulator default; it is enough to hold 1 kg at 25 N.
 
+### Step 4: sensors
+
+- **2D LiDAR** (`gpu_lidar`): 360 rays over 360 degrees, 10 Hz, range 0.12-12 m, Gaussian noise
+  (sigma 1 cm, assumed). Published as `/scan` (`sensor_msgs/LaserScan`, frame `lidar_link`).
+- **RGB-D camera** (`rgbd_camera`) on the gripper, in a D435-sized housing: 320x240, 10 Hz,
+  69 degrees horizontal field of view, clip 0.1-10 m. Published as `/camera/image`,
+  `/camera/depth_image` and `/camera/camera_info`, all in the optical frame
+  `camera_color_optical_frame`. The point cloud exists in Gazebo but is not bridged (cost).
+- Rendering runs on the CPU (llvmpipe) and is cheap at this resolution: Real Time Factor 0.99
+  with both sensors.
+- **Verified:**
+  - LiDAR range to a pedestal at a known distance: 1.114 m against 1.13 m expected (1 cm noise);
+  - the scan is not mirrored: an object on the left appears at +90 degrees;
+  - `lidar_link` in TF at (0.34, 0, 0.275);
+  - camera and TF end to end: the top of a known box is located within 2 mm (pixel, depth and
+    TF are consistent).
+- Tools in `scripts/`: `scan_probe.py`, `cam_probe.py`, `cam_check.py`; view in
+  `config/sensors_view.rviz`.
+
+Known limits:
+- The LiDAR sees the UR5e base (a short sector behind the sensor); it will be masked for SLAM and Nav2.
+- Gazebo depth is perfect (no noise, no holes). It is kept as ground truth. Realistic depth will
+  come from a stereo pair in the same housing (50 mm baseline) at the perception step.
+- An object held between the fingers is closer than the 0.1 m near clip, so it is not visible.
+- `camera_info` counts the image corner as the pixel origin (principal point 160, 120): pixel
+  indices need a +0.5 shift in projection code.
+
 ## Roadmap
 
 1. **Step 4:** LiDAR and RGB-D camera in Gazebo, bridged to ROS.
