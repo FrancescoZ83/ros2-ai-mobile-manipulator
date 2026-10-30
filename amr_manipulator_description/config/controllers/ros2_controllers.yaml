@@ -10,6 +10,9 @@ controller_manager:
     arm_model_controller:
       type: amr_manipulator_control/ArmModelController
 
+    gripper_controller:
+      type: amr_manipulator_control/GripperController
+
 arm_model_controller:
   ros__parameters:
     joints: [ur_shoulder_pan_joint, ur_shoulder_lift_joint, ur_elbow_joint,
@@ -25,7 +28,7 @@ arm_model_controller:
     kp: [150.0, 150.0, 100.0, 30.0, 30.0, 5.0]
     kd: [40.0, 40.0, 25.0, 3.0, 3.0, 0.1]
     effort_limits: [150.0, 150.0, 150.0, 28.0, 28.0, 28.0]
-    mode: 1
+    mode: 2
     omega: [20.0, 20.0, 20.0, 30.0, 30.0, 40.0]
     coriolis_scale: 1.0
     velocity_limits: [2.8, 2.8, 2.8, 2.8, 2.8, 2.8]   # ~0.9 * pi, from the URDF limits
@@ -36,3 +39,33 @@ arm_model_controller:
     velocity_noise_std: 0.02
     velocity_filter_hz: 20.0
     noise_seed: 42
+    adapt_gain: 0.5          # gamma [kg/(N.m.rad/s)/s]; 0 = adaptation off, tuned at runtime in the tests
+    payload_estimate: 0.0    # [kg] initial estimate of the payload on top of extra_mass
+    payload_min: 0.0         # [kg] projection bounds of the estimate
+    payload_max: 6.0
+
+gripper_controller:
+  ros__parameters:
+    joints:
+      - gripper_left_finger_joint
+      - gripper_right_finger_joint
+    kp_c: 1500.0
+    kd_c: 25.0
+    kp_d: 1500.0
+    kd_d: 25.0
+    fd_max: 10.0
+    open_bias: 5.0
+    open_speed: 0.10
+    approach_speed: 0.05
+    approach_force: 12.0
+    grip_force: 25.0
+    grip_ramp: 0.25
+    force_limit: 40.0
+    settle_time: 0.12
+    stall_ratio: 0.3
+    stall_time: 0.03
+    contact_force: 1.5
+    q_max: 0.04
+    open_gap: 0.085
+    empty_margin: 0.0008
+    empty_force: 5.0

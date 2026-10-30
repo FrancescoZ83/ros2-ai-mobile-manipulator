@@ -15,7 +15,7 @@ find_package(kdl_parser REQUIRED)
 find_package(orocos_kdl REQUIRED)
 find_package(std_msgs REQUIRED)
 
-add_library(amr_manipulator_control SHARED src/arm_model_controller.cpp)
+add_library(amr_manipulator_control SHARED src/arm_model_controller.cpp src/gripper_controller.cpp)
 target_compile_features(amr_manipulator_control PUBLIC cxx_std_17)
 target_include_directories(amr_manipulator_control PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>

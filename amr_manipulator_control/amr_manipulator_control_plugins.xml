@@ -4,4 +4,9 @@
          base_class_type="controller_interface::ControllerInterface">
     <description>Gravity compensation + joint PD (later: inverse dynamics, adaptive payload)</description>
   </class>
+  <class name="amr_manipulator_control/GripperController"
+         type="amr_manipulator_control::GripperController"
+         base_class_type="controller_interface::ControllerInterface">
+    <description>Two-finger gripper: common/differential effort control with contact detection</description>
+  </class>
 </library>

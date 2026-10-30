@@ -2,13 +2,18 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import IncludeLaunchDescription, SetEnvironmentVariable
+from launch.actions import (
+    DeclareLaunchArgument,
+    IncludeLaunchDescription,
+    RegisterEventHandler,
+    SetEnvironmentVariable,
+)
+from launch.event_handlers import OnProcessExit
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import Command
+from launch.substitutions import Command, LaunchConfiguration
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
-from launch.actions import RegisterEventHandler
-from launch.event_handlers import OnProcessExit
+
 
 def generate_launch_description():
     desc_share = get_package_share_directory('amr_manipulator_description')
@@ -38,8 +43,19 @@ def generate_launch_description():
     )
 
     # 3. robot_state_publisher: runs xacro at launch time and publishes
-    #    /robot_description and /tf_static.
-    robot_description = ParameterValue(Command(['xacro ', xacro_file, ' use_sim:=true']), value_type=str)
+    #    /robot_description and /tf_static. The test payload at the TCP is a launch
+    #    argument: ros2 launch amr_manipulator_gazebo sim.launch.py payload_mass:=3.0
+    payload_arg = DeclareLaunchArgument(
+        'payload_mass',
+        default_value='0.0',
+        description='Test payload at the TCP [kg], simulation only')
+    robot_description = ParameterValue(
+        Command([
+            'xacro ', xacro_file,
+            ' use_sim:=true',
+            ' payload_mass:=', LaunchConfiguration('payload_mass'),
+        ]),
+        value_type=str)
     robot_state_publisher = Node(
         package='robot_state_publisher',
         executable='robot_state_publisher',
@@ -81,14 +97,15 @@ def generate_launch_description():
     start_jsb_after_spawn = RegisterEventHandler(
         OnProcessExit(target_action=spawn, on_exit=[joint_state_broadcaster]))
 
+    # 7. The arm controller starts once the joint_state_broadcaster spawner has finished.
     arm_controller_spawner = Node(
-       package='controller_manager',
+        package='controller_manager',
         executable='spawner',
         arguments=['arm_model_controller',
                    '--controller-manager', '/controller_manager',
                    '--controller-manager-timeout', '60'],
+        output='screen',
     )
-
     start_arm_after_jsb = RegisterEventHandler(
         OnProcessExit(
             target_action=joint_state_broadcaster,
@@ -96,12 +113,31 @@ def generate_launch_description():
         )
     )
 
+    # 8. The gripper controller starts once the arm controller spawner has finished.
+    #    On activation it opens the fingers from wherever they ended up during the start-up ramp.
+    gripper_controller_spawner = Node(
+        package='controller_manager',
+        executable='spawner',
+        arguments=['gripper_controller',
+                   '--controller-manager', '/controller_manager',
+                   '--controller-manager-timeout', '60'],
+        output='screen',
+    )
+    start_gripper_after_arm = RegisterEventHandler(
+        OnProcessExit(
+            target_action=arm_controller_spawner,
+            on_exit=[gripper_controller_spawner],
+        )
+    )
+
     return LaunchDescription([
+        payload_arg,
         set_resource_path,
         gazebo,
         robot_state_publisher,
         spawn,
         bridge,
         start_jsb_after_spawn,
-        start_arm_after_jsb
+        start_arm_after_jsb,
+        start_gripper_after_arm,
     ])

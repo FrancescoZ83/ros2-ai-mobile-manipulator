@@ -47,6 +47,11 @@ private:
   // Reads the "robot_description" parameter of another node (robot_state_publisher)
   bool fetch_urdf(const std::string & remote_node, std::string & urdf);
 
+  // C(q, x) y from KDL's h(v) = C(q, v) v, by polarisation: (h(x + y) - h(x) - h(y)) / 2
+  bool coriolis_bilinear(
+    KDL::ChainDynParam & dyn, const KDL::JntArray & x, const KDL::JntArray & y,
+    KDL::JntArray & out);
+
   // Goal topic callback: runs in the executor thread, never in the control loop
   void on_goal(const Float64MultiArray & msg);
 
@@ -57,7 +62,7 @@ private:
   std::vector<std::string> joint_names_;
   std::vector<double> kp_, kd_;        // PD mode gains
   std::vector<double> ct_kp_, ct_kd_;  // computed torque gains: omega^2 and 2*omega
-  
+
   // Friction feedforward (nominal values, applied on the reference velocity)
   std::vector<double> fric_coulomb_, fric_viscous_;
   double fric_smoothing_{0.05};        // width of the tanh around zero velocity [rad/s]
@@ -76,11 +81,22 @@ private:
   std::atomic<double> gravity_scale_{1.0};
   std::atomic<double> pd_scale_{1.0};
   std::atomic<double> coriolis_scale_{1.0};
-  std::atomic<int> mode_{0};           // 0 = PD + gravity, 1 = computed torque
+  std::atomic<int> mode_{0};           // 0 = PD + gravity, 1 = computed torque, 2 = adaptive payload
   std::atomic<double> friction_scale_{1.0};
   std::atomic<double> velocity_noise_std_{0.0};  // [rad/s]
   std::atomic<double> velocity_filter_hz_{0.0};  // 0 = filter disabled
   rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr param_cb_handle_;
+
+  // Adaptive payload estimate [kg] (point mass at the tip, on top of extra_mass)
+  double payload_hat_{0.0};               // touched only by the control thread
+  double payload_init_{0.0};
+  double payload_min_{0.0};
+  double payload_max_{6.0};
+  std::atomic<double> adapt_gain_{0.0};   // gamma, 0 = adaptation off
+  std::atomic<double> payload_set_{0.0};  // value requested with ros2 param set
+  std::atomic<bool> payload_set_pending_{false};
+  double debug_payload_{0.0};             // copy of the estimate for the timer thread
+  rclcpp::Publisher<Float64MultiArray>::SharedPtr payload_pub_;
 
   // Dynamic model. chain_ must be declared before dyn_ (dyn_ keeps a reference to it)
   KDL::Chain chain_;
@@ -88,6 +104,14 @@ private:
   KDL::JntArray q_, qdot_, g_, c_;     // preallocated: no allocation inside update()
   KDL::JntSpaceInertiaMatrix m_;
   Eigen::VectorXd a_, tau_;            // commanded acceleration and torque
+
+  // Payload model: same kinematics, massless links, 1 kg point mass at the tip.
+  // payload_chain_ must be declared before payload_dyn_ (ChainDynParam keeps a reference)
+  KDL::Chain payload_chain_;
+  std::unique_ptr<KDL::ChainDynParam> payload_dyn_;
+  KDL::JntSpaceInertiaMatrix mp_;
+  KDL::JntArray gp_, cp_, qdot_r_, xy_, h_x_, h_y_, h_xy_;
+  Eigen::VectorXd qdd_r_, s_, z_, y_;  // Slotine-Li variables and payload terms
 
   // Quintic point-to-point trajectory
   std::vector<double> q_start_, q_goal_, ref_q_, ref_qd_;

@@ -7,6 +7,7 @@
   <xacro:include filename="$(find amr_manipulator_description)/urdf/sensors/rgbd_camera.urdf.xacro"/>
   <xacro:property name="ur_cfg" value="$(find amr_manipulator_description)/config/arm/ur5e"/>
   <xacro:arg name="use_sim" default="false"/>
+  <xacro:arg name="payload_mass" default="0.0"/>
 
   <xacro:mobile_base/>
 
@@ -50,6 +51,7 @@
     <xacro:include filename="$(find amr_manipulator_description)/urdf/sim/gazebo_physics.xacro"/>
     <xacro:include filename="$(find amr_manipulator_description)/urdf/sim/gazebo_plugins.xacro"/>
     <xacro:include filename="$(find amr_manipulator_description)/urdf/sim/ros2_control.xacro"/>
+    <xacro:include filename="$(find amr_manipulator_description)/urdf/sim/payload.xacro"/>
   </xacro:if>
 
 </robot>

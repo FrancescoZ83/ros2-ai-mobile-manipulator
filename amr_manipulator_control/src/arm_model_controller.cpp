@@ -73,6 +73,10 @@ controller_interface::CallbackReturn ArmModelController::on_init()
     auto_declare<double>("velocity_noise_std", 0.0);
     auto_declare<double>("velocity_filter_hz", 0.0);
     auto_declare<int>("noise_seed", 42);
+    auto_declare<double>("adapt_gain", 0.0);
+    auto_declare<double>("payload_estimate", 0.0);
+    auto_declare<double>("payload_min", 0.0);
+    auto_declare<double>("payload_max", 6.0);
   } catch (const std::exception & e) {
     RCLCPP_ERROR(get_node()->get_logger(), "on_init failed: %s", e.what());
     return controller_interface::CallbackReturn::ERROR;
@@ -106,7 +110,9 @@ controller_interface::CallbackReturn ArmModelController::on_configure(
 {
   auto node = get_node();
   std::string root, tip, urdf_node;
-  double extra_mass = 0.0; std::vector<double> omega; int noise_seed = 42;
+  double extra_mass = 0.0;
+  std::vector<double> omega;
+  int noise_seed = 42;
 
   try {
     joint_names_ = node->get_parameter("joints").as_string_array();
@@ -132,6 +138,11 @@ controller_interface::CallbackReturn ArmModelController::on_configure(
     velocity_filter_hz_ = node->get_parameter("velocity_filter_hz").as_double();
     noise_seed = static_cast<int>(node->get_parameter("noise_seed").as_int());
 
+    adapt_gain_ = node->get_parameter("adapt_gain").as_double();
+    payload_init_ = node->get_parameter("payload_estimate").as_double();
+    payload_min_ = node->get_parameter("payload_min").as_double();
+    payload_max_ = node->get_parameter("payload_max").as_double();
+
     coriolis_scale_ = node->get_parameter("coriolis_scale").as_double();
     mode_ = static_cast<int>(node->get_parameter("mode").as_int());
   } catch (const std::exception & e) {
@@ -142,20 +153,30 @@ controller_interface::CallbackReturn ArmModelController::on_configure(
 
   const std::size_t n = joint_names_.size();
   if (n == 0 || target_.size() != n || kp_.size() != n || kd_.size() != n ||
-    effort_limits_.size() != n || omega.size() != n || velocity_limits_.size() != n || fric_coulomb_.size() != n || fric_viscous_.size() != n)
+    effort_limits_.size() != n || omega.size() != n || velocity_limits_.size() != n ||
+    fric_coulomb_.size() != n || fric_viscous_.size() != n)
   {
-    for (const double v : velocity_limits_) {
-      if (!(v > 0.0)) {
-        RCLCPP_ERROR(node->get_logger(), "velocity_limits must be strictly positive");
-        return controller_interface::CallbackReturn::ERROR;
-      }
-    }
-    if (!(fric_smoothing_ > 0.0)) {
-      RCLCPP_ERROR(node->get_logger(), "friction_smoothing must be strictly positive");
+    RCLCPP_ERROR(node->get_logger(),
+      "joints, target_positions, kp, kd, effort_limits, omega, velocity_limits, "
+      "friction_coulomb and friction_viscous must all have the same non-zero size");
+    return controller_interface::CallbackReturn::ERROR;
+  }
+  for (const double v : velocity_limits_) {
+    if (!(v > 0.0)) {
+      RCLCPP_ERROR(node->get_logger(), "velocity_limits must be strictly positive");
       return controller_interface::CallbackReturn::ERROR;
     }
+  }
+  if (!(fric_smoothing_ > 0.0)) {
+    RCLCPP_ERROR(node->get_logger(), "friction_smoothing must be strictly positive");
+    return controller_interface::CallbackReturn::ERROR;
+  }
+  if (!(payload_min_ >= 0.0) || !(payload_max_ > payload_min_) ||
+    !(payload_init_ >= payload_min_) || !(payload_init_ <= payload_max_) ||
+    !(adapt_gain_.load() >= 0.0))
+  {
     RCLCPP_ERROR(node->get_logger(),
-      "joints, target_positions, kp, kd and effort_limits must all have the same non-zero size");
+      "payload_min/payload_max/payload_estimate/adapt_gain are inconsistent");
     return controller_interface::CallbackReturn::ERROR;
   }
 
@@ -175,7 +196,7 @@ controller_interface::CallbackReturn ArmModelController::on_configure(
     return controller_interface::CallbackReturn::ERROR;
   }
 
-  // Point mass lumped at the tip frame (fingers now, grasped payload in step 3.6)
+  // Point mass lumped at the tip frame (fingers and camera; the grasped payload is estimated)
   if (extra_mass > 0.0) {
     chain_.addSegment(KDL::Segment(
       "extra_mass", KDL::Joint(), KDL::Frame::Identity(),
@@ -198,14 +219,44 @@ controller_interface::CallbackReturn ArmModelController::on_configure(
   }
 
   dyn_ = std::make_unique<KDL::ChainDynParam>(chain_, KDL::Vector(0.0, 0.0, -kGravity));
+
+  // Payload model: same kinematics, massless links, plus a 1 kg point mass at the tip
+  payload_dyn_.reset();  // drop the reference to the old chain before replacing it
+  payload_chain_ = KDL::Chain();
+  for (unsigned int i = 0; i < chain_.getNrOfSegments(); ++i) {
+    const KDL::Segment & seg = chain_.getSegment(i);
+    payload_chain_.addSegment(KDL::Segment(
+      seg.getJoint(), seg.getFrameToTip(), KDL::RigidBodyInertia::Zero()));
+  }
+  payload_chain_.addSegment(KDL::Segment(
+    "payload", KDL::Joint(), KDL::Frame::Identity(),
+    KDL::RigidBodyInertia(1.0, KDL::Vector::Zero(), KDL::RotationalInertia(0, 0, 0))));
+  payload_dyn_ = std::make_unique<KDL::ChainDynParam>(
+    payload_chain_, KDL::Vector(0.0, 0.0, -kGravity));
+
   q_ = KDL::JntArray(n);
   g_ = KDL::JntArray(n);
-  
   qdot_ = KDL::JntArray(n);
   c_ = KDL::JntArray(n);
   m_.resize(n);
   a_ = Eigen::VectorXd::Zero(n);
   tau_ = Eigen::VectorXd::Zero(n);
+
+  // Payload model buffers and Slotine-Li variables (no allocation inside update())
+  mp_.resize(n);
+  gp_ = KDL::JntArray(n);
+  cp_ = KDL::JntArray(n);
+  qdot_r_ = KDL::JntArray(n);
+  xy_ = KDL::JntArray(n);
+  h_x_ = KDL::JntArray(n);
+  h_y_ = KDL::JntArray(n);
+  h_xy_ = KDL::JntArray(n);
+  qdd_r_ = Eigen::VectorXd::Zero(n);
+  s_ = Eigen::VectorXd::Zero(n);
+  z_ = Eigen::VectorXd::Zero(n);
+  y_ = Eigen::VectorXd::Zero(n);
+  payload_hat_ = payload_init_;
+  payload_set_pending_ = false;
 
   rng_.seed(static_cast<std::mt19937::result_type>(noise_seed));
   qd_filt_.assign(n, 0.0);
@@ -237,6 +288,8 @@ controller_interface::CallbackReturn ArmModelController::on_configure(
   debug_data_.assign(2 + 5 * n, 0.0);
   debug_valid_ = false;
   state_pub_ = node->create_publisher<Float64MultiArray>("~/state", rclcpp::SystemDefaultsQoS());
+  payload_pub_ = node->create_publisher<Float64MultiArray>(
+    "~/payload", rclcpp::SystemDefaultsQoS());
   debug_timer_.reset();
   debug_timer_ = node->create_wall_timer(
     std::chrono::milliseconds(20), [this]() {publish_debug();});
@@ -262,6 +315,8 @@ controller_interface::CallbackReturn ArmModelController::on_configure(
           live = &velocity_noise_std_;
         } else if (name == "velocity_filter_hz") {
           live = &velocity_filter_hz_;
+        } else if (name == "adapt_gain") {
+          live = &adapt_gain_;
         }
 
         if (live != nullptr) {
@@ -277,16 +332,31 @@ controller_interface::CallbackReturn ArmModelController::on_configure(
             return result;
           }
           *live = value;
+        } else if (name == "payload_estimate") {
+          if (p.get_type() != rclcpp::ParameterType::PARAMETER_DOUBLE) {
+            result.successful = false;
+            result.reason = name + " must be a double (write 3.0, not 3)";
+            return result;
+          }
+          const double value = p.as_double();
+          if (!std::isfinite(value) || value < payload_min_ || value > payload_max_) {
+            result.successful = false;
+            result.reason = name + " must be within [payload_min, payload_max]";
+            return result;
+          }
+          payload_set_ = value;  // applied by the control thread at the next cycle
+          payload_set_pending_ = true;
         } else if (name == "mode") {
           if (p.get_type() != rclcpp::ParameterType::PARAMETER_INTEGER) {
             result.successful = false;
-            result.reason = "mode must be an integer (0 = PD + gravity, 1 = computed torque)";
+            result.reason =
+              "mode must be an integer (0 = PD + gravity, 1 = computed torque, 2 = adaptive payload)";
             return result;
           }
           const auto value = p.as_int();
-          if (value < 0 || value > 1) {
+          if (value < 0 || value > 2) {
             result.successful = false;
-            result.reason = "mode must be 0 or 1";
+            result.reason = "mode must be 0, 1 or 2";
             return result;
           }
           mode_ = static_cast<int>(value);
@@ -331,14 +401,37 @@ void ArmModelController::on_goal(const Float64MultiArray & msg)
 void ArmModelController::publish_debug()
 {
   Float64MultiArray msg;
+  Float64MultiArray payload_msg;
   {
     std::lock_guard<std::mutex> lock(debug_mutex_);
     if (!debug_valid_) {
       return;
     }
     msg.data = debug_data_;  // copy while holding the lock, publish after releasing it
+    payload_msg.data = {debug_payload_};
   }
   state_pub_->publish(msg);
+  payload_pub_->publish(payload_msg);
+}
+
+bool ArmModelController::coriolis_bilinear(
+  KDL::ChainDynParam & dyn, const KDL::JntArray & x, const KDL::JntArray & y,
+  KDL::JntArray & out)
+{
+  const unsigned int n = x.rows();
+  for (unsigned int i = 0; i < n; ++i) {
+    xy_(i) = x(i) + y(i);
+  }
+  // h(v) = C(q, v) v is what KDL returns; C(q, x) y is the polarisation of that quadratic form
+  if (dyn.JntToCoriolis(q_, x, h_x_) < 0 || dyn.JntToCoriolis(q_, y, h_y_) < 0 ||
+    dyn.JntToCoriolis(q_, xy_, h_xy_) < 0)
+  {
+    return false;
+  }
+  for (unsigned int i = 0; i < n; ++i) {
+    out(i) = 0.5 * (h_xy_(i) - h_x_(i) - h_y_(i));
+  }
+  return true;
 }
 
 controller_interface::CallbackReturn ArmModelController::on_activate(
@@ -359,6 +452,8 @@ controller_interface::CallbackReturn ArmModelController::on_activate(
     goal_pending_ = false;
   }
   filter_primed_ = false;  // the filter restarts from the first measurement
+  payload_hat_ = payload_init_;  // every activation restarts from the configured estimate
+  payload_set_pending_ = false;
   return controller_interface::CallbackReturn::SUCCESS;
 }
 
@@ -379,6 +474,11 @@ controller_interface::return_type ArmModelController::update(
 {
   const std::size_t n = joint_names_.size();
   const double dt = period.seconds();
+
+  // 0. A payload estimate set from outside (ros2 param set) is applied by the control thread
+  if (payload_set_pending_.exchange(false)) {
+    payload_hat_ = std::clamp(payload_set_.load(), payload_min_, payload_max_);
+  }
 
   // 1. Take a pending goal when the current trajectory is over; stretch T to respect
   //    the velocity limits (quintic peak speed is 1.875 * |delta| / T)
@@ -423,7 +523,7 @@ controller_interface::return_type ArmModelController::update(
   }
   filter_primed_ = true;
 
-  // 4. Model terms
+  // 4. Nominal model terms available before the references
   if (dyn_->JntToGravity(q_, g_) < 0) {
     return controller_interface::return_type::ERROR;
   }
@@ -441,33 +541,73 @@ controller_interface::return_type ArmModelController::update(
     const double ref_qdd = dds * delta;
     const double e = ref_q_[i] - q_(i);
     const double ed = ref_qd_[i] - qdot_(i);
-    if (mode == 1) {
+    if (mode >= 1) {
       a_(i) = ref_qdd + ct_kd_[i] * ed + ct_kp_[i] * e;  // commanded acceleration
     } else {
       tau_(i) = ps * (kp_[i] * e + kd_[i] * ed);          // PD part only
     }
+    if (mode == 2) {
+      // Slotine-Li variables with Lambda = omega = ct_kd / 2
+      const double lambda = 0.5 * ct_kd_[i];
+      s_(i) = ed + lambda * e;                  // filtered tracking error
+      qdot_r_(i) = ref_qd_[i] + lambda * e;     // reference velocity
+      qdd_r_(i) = ref_qdd + lambda * ed;        // reference acceleration
+    }
   }
 
-  // 6. Torque: tau = M a + C qdot + g (mode 1) or PD + g (mode 0)
+  // 6. Torque: PD + g (mode 0), M a + C qdot + g (mode 1), Slotine-Li with payload (mode 2)
   if (mode == 1) {
     tau_.noalias() = m_.data * a_;
     tau_ += cs * c_.data;
+  } else if (mode == 2) {
+    // Known model: M0 a + C0(q, qdot) qdot_r
+    if (dyn_->JntToMass(q_, m_) < 0 || !coriolis_bilinear(*dyn_, qdot_, qdot_r_, c_)) {
+      return controller_interface::return_type::ERROR;
+    }
+    // Unit payload: Mp, Cp(q, qdot) qdot_r, gp
+    if (payload_dyn_->JntToMass(q_, mp_) < 0 || payload_dyn_->JntToGravity(q_, gp_) < 0 ||
+      !coriolis_bilinear(*payload_dyn_, qdot_, qdot_r_, cp_))
+    {
+      return controller_interface::return_type::ERROR;
+    }
+    tau_.noalias() = m_.data * a_;
+    tau_ += cs * c_.data;
+    // Payload part of the control: m_hat * (Mp a + Cp qdot_r + gp)
+    z_.noalias() = mp_.data * a_;
+    z_ += cs * cp_.data;
+    z_ += gs * gp_.data;
+    tau_ += payload_hat_ * z_;
+    // Regressor of the adaptation law (uses qdd_r, not a): Y = Mp qdd_r + Cp qdot_r + gp
+    y_.noalias() = mp_.data * qdd_r_;
+    y_ += cs * cp_.data;
+    y_ += gs * gp_.data;
   }
   tau_ += gs * g_.data;
 
   // 7. Friction feedforward on the reference velocity, saturation and output
+  bool saturated = false;
   for (std::size_t i = 0; i < n; ++i) {
     const double tau_fric = fs * (fric_viscous_[i] * ref_qd_[i] +
       fric_coulomb_[i] * std::tanh(ref_qd_[i] / fric_smoothing_));
-    double tau = std::clamp(tau_(i) + tau_fric, -effort_limits_[i], effort_limits_[i]);
+    const double wanted = tau_(i) + tau_fric;
+    double tau = std::clamp(wanted, -effort_limits_[i], effort_limits_[i]);
     if (!std::isfinite(tau)) {
       tau = 0.0;
+    }
+    if (tau != wanted) {
+      saturated = true;  // clipped or not finite: do not adapt on this cycle
     }
     tau_(i) = tau;
     command_interfaces_[i].set_value(tau);
   }
 
-  // 8. Debug sample for the timer thread; skipped if that thread holds the lock
+  // 8. Adaptation law (Slotine-Li, projected): dm/dt = gamma * Y^T s
+  const double gamma = adapt_gain_.load();
+  if (mode == 2 && gamma > 0.0 && !saturated) {
+    payload_hat_ = std::clamp(payload_hat_ + dt * gamma * y_.dot(s_), payload_min_, payload_max_);
+  }
+
+  // 9. Debug sample for the timer thread; skipped if that thread holds the lock
   {
     std::unique_lock<std::mutex> lock(debug_mutex_, std::try_to_lock);
     if (lock.owns_lock()) {
@@ -480,6 +620,7 @@ controller_interface::return_type ArmModelController::update(
         debug_data_[2 + 3 * n + i] = qdot_(i);
         debug_data_[2 + 4 * n + i] = tau_(i);
       }
+      debug_payload_ = payload_hat_;
       debug_valid_ = true;
     }
   }
