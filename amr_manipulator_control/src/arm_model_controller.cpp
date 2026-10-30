@@ -17,6 +17,7 @@ namespace amr_manipulator_control
 namespace
 {
 constexpr double kGravity = 9.81;  // [m/s^2], acting along -Z of the chain root frame
+constexpr double kPi = 3.14159265358979323846;
 }
 
 controller_interface::InterfaceConfiguration
@@ -61,6 +62,17 @@ controller_interface::CallbackReturn ArmModelController::on_init()
     auto_declare<std::vector<double>>("kp", std::vector<double>());
     auto_declare<std::vector<double>>("kd", std::vector<double>());
     auto_declare<std::vector<double>>("effort_limits", std::vector<double>());
+    auto_declare<std::vector<double>>("omega", std::vector<double>());
+    auto_declare<double>("coriolis_scale", 1.0);
+    auto_declare<int>("mode", 0);
+    auto_declare<std::vector<double>>("velocity_limits", std::vector<double>());
+    auto_declare<std::vector<double>>("friction_coulomb", std::vector<double>());
+    auto_declare<std::vector<double>>("friction_viscous", std::vector<double>());
+    auto_declare<double>("friction_smoothing", 0.05);
+    auto_declare<double>("friction_scale", 1.0);
+    auto_declare<double>("velocity_noise_std", 0.0);
+    auto_declare<double>("velocity_filter_hz", 0.0);
+    auto_declare<int>("noise_seed", 42);
   } catch (const std::exception & e) {
     RCLCPP_ERROR(get_node()->get_logger(), "on_init failed: %s", e.what());
     return controller_interface::CallbackReturn::ERROR;
@@ -94,7 +106,7 @@ controller_interface::CallbackReturn ArmModelController::on_configure(
 {
   auto node = get_node();
   std::string root, tip, urdf_node;
-  double extra_mass = 0.0;
+  double extra_mass = 0.0; std::vector<double> omega; int noise_seed = 42;
 
   try {
     joint_names_ = node->get_parameter("joints").as_string_array();
@@ -109,6 +121,19 @@ controller_interface::CallbackReturn ArmModelController::on_configure(
     kp_ = node->get_parameter("kp").as_double_array();
     kd_ = node->get_parameter("kd").as_double_array();
     effort_limits_ = node->get_parameter("effort_limits").as_double_array();
+    omega = node->get_parameter("omega").as_double_array();
+    velocity_limits_ = node->get_parameter("velocity_limits").as_double_array();
+
+    fric_coulomb_ = node->get_parameter("friction_coulomb").as_double_array();
+    fric_viscous_ = node->get_parameter("friction_viscous").as_double_array();
+    fric_smoothing_ = node->get_parameter("friction_smoothing").as_double();
+    friction_scale_ = node->get_parameter("friction_scale").as_double();
+    velocity_noise_std_ = node->get_parameter("velocity_noise_std").as_double();
+    velocity_filter_hz_ = node->get_parameter("velocity_filter_hz").as_double();
+    noise_seed = static_cast<int>(node->get_parameter("noise_seed").as_int());
+
+    coriolis_scale_ = node->get_parameter("coriolis_scale").as_double();
+    mode_ = static_cast<int>(node->get_parameter("mode").as_int());
   } catch (const std::exception & e) {
     // Typical cause: an array written as [150, 150] (integers) instead of [150.0, 150.0]
     RCLCPP_ERROR(node->get_logger(), "Bad parameter: %s", e.what());
@@ -117,8 +142,18 @@ controller_interface::CallbackReturn ArmModelController::on_configure(
 
   const std::size_t n = joint_names_.size();
   if (n == 0 || target_.size() != n || kp_.size() != n || kd_.size() != n ||
-    effort_limits_.size() != n)
+    effort_limits_.size() != n || omega.size() != n || velocity_limits_.size() != n || fric_coulomb_.size() != n || fric_viscous_.size() != n)
   {
+    for (const double v : velocity_limits_) {
+      if (!(v > 0.0)) {
+        RCLCPP_ERROR(node->get_logger(), "velocity_limits must be strictly positive");
+        return controller_interface::CallbackReturn::ERROR;
+      }
+    }
+    if (!(fric_smoothing_ > 0.0)) {
+      RCLCPP_ERROR(node->get_logger(), "friction_smoothing must be strictly positive");
+      return controller_interface::CallbackReturn::ERROR;
+    }
     RCLCPP_ERROR(node->get_logger(),
       "joints, target_positions, kp, kd and effort_limits must all have the same non-zero size");
     return controller_interface::CallbackReturn::ERROR;
@@ -165,27 +200,96 @@ controller_interface::CallbackReturn ArmModelController::on_configure(
   dyn_ = std::make_unique<KDL::ChainDynParam>(chain_, KDL::Vector(0.0, 0.0, -kGravity));
   q_ = KDL::JntArray(n);
   g_ = KDL::JntArray(n);
-  q0_.assign(n, 0.0);
+  
+  qdot_ = KDL::JntArray(n);
+  c_ = KDL::JntArray(n);
+  m_.resize(n);
+  a_ = Eigen::VectorXd::Zero(n);
+  tau_ = Eigen::VectorXd::Zero(n);
 
-    // Live-tunable parameters (ros2 param set ...)
+  rng_.seed(static_cast<std::mt19937::result_type>(noise_seed));
+  qd_filt_.assign(n, 0.0);
+  filter_primed_ = false;
+
+  // Computed torque gains: critically damped error dynamics e'' + 2w e' + w^2 e = 0
+  ct_kp_.resize(n);
+  ct_kd_.resize(n);
+  for (std::size_t i = 0; i < n; ++i) {
+    ct_kp_[i] = omega[i] * omega[i];
+    ct_kd_[i] = 2.0 * omega[i];
+  }
+
+  // Trajectory state; the first trajectory is started in on_activate()
+  q_start_.assign(n, 0.0);
+  q_goal_.assign(n, 0.0);
+  ref_q_.assign(n, 0.0);
+  ref_qd_.assign(n, 0.0);
+  pending_goal_.assign(n, 0.0);
+  goal_pending_ = false;
+
+  // Goal topic: [q_1 ... q_n, duration]
+  goal_sub_.reset();
+  goal_sub_ = node->create_subscription<Float64MultiArray>(
+    "~/goal", rclcpp::SystemDefaultsQoS(),
+    [this](const Float64MultiArray & msg) {on_goal(msg);});
+
+  // Debug topic: [t_traj, T, q_d(n), q(n), qd_d(n), qd(n), tau(n)], published at 50 Hz
+  debug_data_.assign(2 + 5 * n, 0.0);
+  debug_valid_ = false;
+  state_pub_ = node->create_publisher<Float64MultiArray>("~/state", rclcpp::SystemDefaultsQoS());
+  debug_timer_.reset();
+  debug_timer_ = node->create_wall_timer(
+    std::chrono::milliseconds(20), [this]() {publish_debug();});
+
+  // Live-tunable parameters (ros2 param set ...)
   param_cb_handle_.reset();
   param_cb_handle_ = node->add_on_set_parameters_callback(
     [this](const std::vector<rclcpp::Parameter> & params) {
       rcl_interfaces::msg::SetParametersResult result;
       result.successful = true;
       for (const auto & p : params) {
-        if (p.get_name() != "gravity_scale" && p.get_name() != "pd_scale") {
-          continue;
+        const std::string & name = p.get_name();
+        std::atomic<double> * live = nullptr;  // live-tunable double parameters
+        if (name == "gravity_scale") {
+          live = &gravity_scale_;
+        } else if (name == "pd_scale") {
+          live = &pd_scale_;
+        } else if (name == "coriolis_scale") {
+          live = &coriolis_scale_;
+        } else if (name == "friction_scale") {
+          live = &friction_scale_;
+        } else if (name == "velocity_noise_std") {
+          live = &velocity_noise_std_;
+        } else if (name == "velocity_filter_hz") {
+          live = &velocity_filter_hz_;
         }
-        if (p.get_type() != rclcpp::ParameterType::PARAMETER_DOUBLE) {
-          result.successful = false;
-          result.reason = p.get_name() + " must be a double (write 1.0, not 1)";
-          return result;
-        }
-        if (p.get_name() == "gravity_scale") {
-          gravity_scale_ = p.as_double();
-        } else {
-          pd_scale_ = p.as_double();
+
+        if (live != nullptr) {
+          if (p.get_type() != rclcpp::ParameterType::PARAMETER_DOUBLE) {
+            result.successful = false;
+            result.reason = name + " must be a double (write 1.0, not 1)";
+            return result;
+          }
+          const double value = p.as_double();
+          if (!std::isfinite(value) || value < 0.0) {
+            result.successful = false;
+            result.reason = name + " must be finite and >= 0";
+            return result;
+          }
+          *live = value;
+        } else if (name == "mode") {
+          if (p.get_type() != rclcpp::ParameterType::PARAMETER_INTEGER) {
+            result.successful = false;
+            result.reason = "mode must be an integer (0 = PD + gravity, 1 = computed torque)";
+            return result;
+          }
+          const auto value = p.as_int();
+          if (value < 0 || value > 1) {
+            result.successful = false;
+            result.reason = "mode must be 0 or 1";
+            return result;
+          }
+          mode_ = static_cast<int>(value);
         }
       }
       return result;
@@ -201,14 +305,60 @@ controller_interface::CallbackReturn ArmModelController::on_configure(
   return controller_interface::CallbackReturn::SUCCESS;
 }
 
+void ArmModelController::on_goal(const Float64MultiArray & msg)
+{
+  const std::size_t n = joint_names_.size();
+  if (msg.data.size() != n + 1) {
+    RCLCPP_WARN(get_node()->get_logger(),
+      "Goal ignored: expected %zu values (targets + duration), got %zu", n + 1, msg.data.size());
+    return;
+  }
+  const double duration = msg.data[n];
+  bool ok = std::isfinite(duration) && duration >= 0.2;
+  for (std::size_t i = 0; i < n; ++i) {
+    ok = ok && std::isfinite(msg.data[i]);
+  }
+  if (!ok) {
+    RCLCPP_WARN(get_node()->get_logger(), "Goal ignored: non-finite value or duration < 0.2 s");
+    return;
+  }
+  std::lock_guard<std::mutex> lock(goal_mutex_);
+  pending_goal_.assign(msg.data.begin(), msg.data.begin() + n);
+  pending_time_ = duration;
+  goal_pending_ = true;
+}
+
+void ArmModelController::publish_debug()
+{
+  Float64MultiArray msg;
+  {
+    std::lock_guard<std::mutex> lock(debug_mutex_);
+    if (!debug_valid_) {
+      return;
+    }
+    msg.data = debug_data_;  // copy while holding the lock, publish after releasing it
+  }
+  state_pub_->publish(msg);
+}
+
 controller_interface::CallbackReturn ArmModelController::on_activate(
   const rclcpp_lifecycle::State &)
 {
-  // The reference ramp starts from wherever the arm is right now
+  // First trajectory: from the measured pose to the configured target
+  double t_min = 0.0;
   for (std::size_t i = 0; i < joint_names_.size(); ++i) {
-    q0_[i] = state_interfaces_[i].get_value();
+    q_start_[i] = state_interfaces_[i].get_value();
+    q_goal_[i] = target_[i];
+    // Quintic peak speed is 1.875 * |delta| / T: stretch T to stay within the limit
+    t_min = std::max(t_min, 1.875 * std::abs(target_[i] - q_start_[i]) / velocity_limits_[i]);
   }
+  traj_time_ = std::max({ramp_time_, 0.2, t_min});
   t_ = 0.0;
+  {
+    std::lock_guard<std::mutex> lock(goal_mutex_);
+    goal_pending_ = false;
+  }
+  filter_primed_ = false;  // the filter restarts from the first measurement
   return controller_interface::CallbackReturn::SUCCESS;
 }
 
@@ -219,6 +369,8 @@ controller_interface::CallbackReturn ArmModelController::on_deactivate(
   for (auto & cmd : command_interfaces_) {
     cmd.set_value(0.0);
   }
+  std::lock_guard<std::mutex> lock(debug_mutex_);
+  debug_valid_ = false;  // stop publishing stale samples
   return controller_interface::CallbackReturn::SUCCESS;
 }
 
@@ -226,31 +378,110 @@ controller_interface::return_type ArmModelController::update(
   const rclcpp::Time &, const rclcpp::Duration & period)
 {
   const std::size_t n = joint_names_.size();
-  t_ += period.seconds();
+  const double dt = period.seconds();
 
-  // Smoothstep ramp 0 -> 1 (zero velocity at both ends)
-  const double x = (ramp_time_ > 0.0) ? std::min(t_ / ramp_time_, 1.0) : 1.0;
-  const double s = x * x * (3.0 - 2.0 * x);
+  // 1. Take a pending goal when the current trajectory is over; stretch T to respect
+  //    the velocity limits (quintic peak speed is 1.875 * |delta| / T)
+  if (t_ >= traj_time_) {
+    std::unique_lock<std::mutex> lock(goal_mutex_, std::try_to_lock);
+    if (lock.owns_lock() && goal_pending_) {
+      double t_min = 0.0;
+      for (std::size_t i = 0; i < n; ++i) {
+        t_min = std::max(
+          t_min, 1.875 * std::abs(pending_goal_[i] - q_goal_[i]) / velocity_limits_[i]);
+      }
+      q_start_ = q_goal_;
+      q_goal_ = pending_goal_;
+      traj_time_ = std::max(pending_time_, t_min);
+      t_ = 0.0;
+      goal_pending_ = false;
+    }
+  }
+  t_ += dt;
 
+  // 2. Quintic blending: s(u) = 10u^3 - 15u^4 + 6u^5, u = t/T in [0, 1]
+  const double T = traj_time_;
+  const double u = std::min(t_ / T, 1.0);
+  const double s = u * u * u * (10.0 - 15.0 * u + 6.0 * u * u);
+  const double ds = 30.0 * u * u * (1.0 - u) * (1.0 - u) / T;
+  const double dds = 60.0 * u * (1.0 - u) * (1.0 - 2.0 * u) / (T * T);
+
+  // 3. Measured state. Velocity = simulated sensor noise + first-order low-pass filter
+  const int mode = mode_.load();
   const double gs = gravity_scale_.load();
   const double ps = pd_scale_.load();
-
+  const double cs = coriolis_scale_.load();
+  const double fs = friction_scale_.load();
+  const double sigma = velocity_noise_std_.load();
+  const double fc = velocity_filter_hz_.load();
+  const double alpha = (fc > 0.0) ? dt / (1.0 / (2.0 * kPi * fc) + dt) : 1.0;  // 1 = no filter
   for (std::size_t i = 0; i < n; ++i) {
     q_(i) = state_interfaces_[i].get_value();
+    const double v = state_interfaces_[n + i].get_value() + sigma * normal_(rng_);
+    qd_filt_[i] = filter_primed_ ? qd_filt_[i] + alpha * (v - qd_filt_[i]) : v;
+    qdot_(i) = qd_filt_[i];
   }
+  filter_primed_ = true;
+
+  // 4. Model terms
   if (dyn_->JntToGravity(q_, g_) < 0) {
     return controller_interface::return_type::ERROR;
   }
+  if (mode == 1) {
+    if (dyn_->JntToMass(q_, m_) < 0 || dyn_->JntToCoriolis(q_, qdot_, c_) < 0) {
+      return controller_interface::return_type::ERROR;
+    }
+  }
 
+  // 5. Reference and feedback, joint by joint
   for (std::size_t i = 0; i < n; ++i) {
-    const double qd = state_interfaces_[n + i].get_value();
-    const double q_ref = q0_[i] + s * (target_[i] - q0_[i]);
-    double tau = gs * g_(i) + ps * (kp_[i] * (q_ref - q_(i)) - kd_[i] * qd);
-    tau = std::clamp(tau, -effort_limits_[i], effort_limits_[i]);
+    const double delta = q_goal_[i] - q_start_[i];
+    ref_q_[i] = q_start_[i] + s * delta;
+    ref_qd_[i] = ds * delta;
+    const double ref_qdd = dds * delta;
+    const double e = ref_q_[i] - q_(i);
+    const double ed = ref_qd_[i] - qdot_(i);
+    if (mode == 1) {
+      a_(i) = ref_qdd + ct_kd_[i] * ed + ct_kp_[i] * e;  // commanded acceleration
+    } else {
+      tau_(i) = ps * (kp_[i] * e + kd_[i] * ed);          // PD part only
+    }
+  }
+
+  // 6. Torque: tau = M a + C qdot + g (mode 1) or PD + g (mode 0)
+  if (mode == 1) {
+    tau_.noalias() = m_.data * a_;
+    tau_ += cs * c_.data;
+  }
+  tau_ += gs * g_.data;
+
+  // 7. Friction feedforward on the reference velocity, saturation and output
+  for (std::size_t i = 0; i < n; ++i) {
+    const double tau_fric = fs * (fric_viscous_[i] * ref_qd_[i] +
+      fric_coulomb_[i] * std::tanh(ref_qd_[i] / fric_smoothing_));
+    double tau = std::clamp(tau_(i) + tau_fric, -effort_limits_[i], effort_limits_[i]);
     if (!std::isfinite(tau)) {
       tau = 0.0;
     }
+    tau_(i) = tau;
     command_interfaces_[i].set_value(tau);
+  }
+
+  // 8. Debug sample for the timer thread; skipped if that thread holds the lock
+  {
+    std::unique_lock<std::mutex> lock(debug_mutex_, std::try_to_lock);
+    if (lock.owns_lock()) {
+      debug_data_[0] = t_;
+      debug_data_[1] = traj_time_;
+      for (std::size_t i = 0; i < n; ++i) {
+        debug_data_[2 + i] = ref_q_[i];
+        debug_data_[2 + n + i] = q_(i);
+        debug_data_[2 + 2 * n + i] = ref_qd_[i];
+        debug_data_[2 + 3 * n + i] = qdot_(i);
+        debug_data_[2 + 4 * n + i] = tau_(i);
+      }
+      debug_valid_ = true;
+    }
   }
   return controller_interface::return_type::OK;
 }

@@ -25,4 +25,14 @@ arm_model_controller:
     kp: [150.0, 150.0, 100.0, 30.0, 30.0, 5.0]
     kd: [40.0, 40.0, 25.0, 3.0, 3.0, 0.1]
     effort_limits: [150.0, 150.0, 150.0, 28.0, 28.0, 28.0]
-
+    mode: 1
+    omega: [20.0, 20.0, 20.0, 30.0, 30.0, 40.0]
+    coriolis_scale: 1.0
+    velocity_limits: [2.8, 2.8, 2.8, 2.8, 2.8, 2.8]   # ~0.9 * pi, from the URDF limits
+    friction_coulomb: [1.0, 1.0, 1.0, 0.3, 0.3, 0.41]   # wrist3 identified from a trace: 0.41 Nm effective in the simulator (URDF: 0.3)
+    friction_viscous: [2.0, 2.0, 2.0, 0.5, 0.5, 0.5]
+    friction_smoothing: 0.01   # [rad/s] narrower tanh: Coulomb compensated down to low speed
+    friction_scale: 1.0
+    velocity_noise_std: 0.02
+    velocity_filter_hz: 20.0
+    noise_seed: 42

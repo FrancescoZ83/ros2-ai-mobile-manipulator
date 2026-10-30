@@ -13,6 +13,7 @@ find_package(rclcpp REQUIRED)
 find_package(rclcpp_lifecycle REQUIRED)
 find_package(kdl_parser REQUIRED)
 find_package(orocos_kdl REQUIRED)
+find_package(std_msgs REQUIRED)
 
 add_library(amr_manipulator_control SHARED src/arm_model_controller.cpp)
 target_compile_features(amr_manipulator_control PUBLIC cxx_std_17)
@@ -21,7 +22,7 @@ target_include_directories(amr_manipulator_control PUBLIC
   $<INSTALL_INTERFACE:include>)
 ament_target_dependencies(amr_manipulator_control
   controller_interface hardware_interface pluginlib rclcpp rclcpp_lifecycle
-  kdl_parser orocos_kdl)
+  kdl_parser orocos_kdl std_msgs)
 # Belt and braces: make sure the KDL library itself is linked
 target_link_libraries(amr_manipulator_control ${orocos_kdl_LIBRARIES})
 
@@ -35,5 +36,5 @@ install(DIRECTORY include/ DESTINATION include)
 ament_export_include_directories(include)
 ament_export_libraries(amr_manipulator_control)
 ament_export_dependencies(controller_interface hardware_interface pluginlib
-  rclcpp rclcpp_lifecycle kdl_parser orocos_kdl)
+  rclcpp rclcpp_lifecycle kdl_parser orocos_kdl std_msgs)
 ament_package()
