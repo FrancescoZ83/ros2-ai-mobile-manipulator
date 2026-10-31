@@ -1,0 +1,1478 @@
+<?xml version="1.0" ?>
+<sdf version="1.8">
+  <world name="amr_world">
+
+    <!-- Physics: 1 ms step = 1000 Hz. Torque control will run inside this step. -->
+    <physics name="1ms" type="ignored">
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+    </physics>
+
+    <gravity>0 0 -9.81</gravity>
+
+    <!-- World-level system plugins (the robot's own plugins live in its URDF) -->
+    <plugin filename="ignition-gazebo-physics-system"
+            name="ignition::gazebo::systems::Physics"/>
+    <plugin filename="ignition-gazebo-user-commands-system"
+            name="ignition::gazebo::systems::UserCommands"/>
+    <plugin filename="ignition-gazebo-scene-broadcaster-system"
+            name="ignition::gazebo::systems::SceneBroadcaster"/>
+    <plugin filename="ignition-gazebo-sensors-system"
+            name="ignition::gazebo::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+
+    <!-- Sun -->
+    <light type="directional" name="sun">
+      <cast_shadows>true</cast_shadows>
+      <pose>0 0 10 0 0 0</pose>
+      <diffuse>0.9 0.9 0.9 1</diffuse>
+      <specular>0.2 0.2 0.2 1</specular>
+      <direction>-0.5 0.1 -0.9</direction>
+    </light>
+
+    <!-- Ground plane, with high friction so the drive wheels can grip -->
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>100 100</size>
+            </plane>
+          </geometry>
+          <surface>
+            <friction>
+              <ode>
+                <mu>1.0</mu>
+                <mu2>1.0</mu2>
+              </ode>
+            </friction>
+          </surface>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>100 100</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>0.7 0.7 0.7 1</ambient>
+            <diffuse>0.7 0.7 0.7 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+  
+    <!-- Generated from layout.yaml: do not edit by hand -->
+    <model name="walls">
+      <static>true</static>
+      <link name="wall_north">
+        <pose>0.0000 4.0750 1.2500 0 0 0</pose>
+        <collision name="collision">
+          <geometry><box><size>12.3000 0.1500 2.5000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>12.3000 0.1500 2.5000</size></box></geometry>
+          <material>
+            <ambient>0.85 0.85 0.82 1.0</ambient>
+            <diffuse>0.85 0.85 0.82 1.0</diffuse>
+          </material>
+        </visual>
+      </link>
+      <link name="wall_south">
+        <pose>0.0000 -4.0750 1.2500 0 0 0</pose>
+        <collision name="collision">
+          <geometry><box><size>12.3000 0.1500 2.5000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>12.3000 0.1500 2.5000</size></box></geometry>
+          <material>
+            <ambient>0.85 0.85 0.82 1.0</ambient>
+            <diffuse>0.85 0.85 0.82 1.0</diffuse>
+          </material>
+        </visual>
+      </link>
+      <link name="wall_west">
+        <pose>-6.0750 0.0000 1.2500 0 0 0</pose>
+        <collision name="collision">
+          <geometry><box><size>0.1500 8.0000 2.5000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.1500 8.0000 2.5000</size></box></geometry>
+          <material>
+            <ambient>0.85 0.85 0.82 1.0</ambient>
+            <diffuse>0.85 0.85 0.82 1.0</diffuse>
+          </material>
+        </visual>
+      </link>
+      <link name="wall_east">
+        <pose>6.0750 0.0000 1.2500 0 0 0</pose>
+        <collision name="collision">
+          <geometry><box><size>0.1500 8.0000 2.5000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.1500 8.0000 2.5000</size></box></geometry>
+          <material>
+            <ambient>0.85 0.85 0.82 1.0</ambient>
+            <diffuse>0.85 0.85 0.82 1.0</diffuse>
+          </material>
+        </visual>
+      </link>
+      <link name="wall_west_0">
+        <pose>-3.0000 -3.8000 1.2500 0 0 0</pose>
+        <collision name="collision">
+          <geometry><box><size>0.1500 0.4000 2.5000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.1500 0.4000 2.5000</size></box></geometry>
+          <material>
+            <ambient>0.85 0.85 0.82 1.0</ambient>
+            <diffuse>0.85 0.85 0.82 1.0</diffuse>
+          </material>
+        </visual>
+      </link>
+      <link name="wall_west_1">
+        <pose>-3.0000 -1.5000 1.2500 0 0 0</pose>
+        <collision name="collision">
+          <geometry><box><size>0.1500 1.8000 2.5000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.1500 1.8000 2.5000</size></box></geometry>
+          <material>
+            <ambient>0.85 0.85 0.82 1.0</ambient>
+            <diffuse>0.85 0.85 0.82 1.0</diffuse>
+          </material>
+        </visual>
+      </link>
+      <link name="wall_west_2">
+        <pose>-3.0000 2.3000 1.2500 0 0 0</pose>
+        <collision name="collision">
+          <geometry><box><size>0.1500 3.4000 2.5000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.1500 3.4000 2.5000</size></box></geometry>
+          <material>
+            <ambient>0.85 0.85 0.82 1.0</ambient>
+            <diffuse>0.85 0.85 0.82 1.0</diffuse>
+          </material>
+        </visual>
+      </link>
+      <link name="wall_east_0">
+        <pose>3.0000 -2.3000 1.2500 0 0 0</pose>
+        <collision name="collision">
+          <geometry><box><size>0.1500 3.4000 2.5000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.1500 3.4000 2.5000</size></box></geometry>
+          <material>
+            <ambient>0.85 0.85 0.82 1.0</ambient>
+            <diffuse>0.85 0.85 0.82 1.0</diffuse>
+          </material>
+        </visual>
+      </link>
+      <link name="wall_east_1">
+        <pose>3.0000 1.5000 1.2500 0 0 0</pose>
+        <collision name="collision">
+          <geometry><box><size>0.1500 1.8000 2.5000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.1500 1.8000 2.5000</size></box></geometry>
+          <material>
+            <ambient>0.85 0.85 0.82 1.0</ambient>
+            <diffuse>0.85 0.85 0.82 1.0</diffuse>
+          </material>
+        </visual>
+      </link>
+      <link name="wall_east_2">
+        <pose>3.0000 3.8000 1.2500 0 0 0</pose>
+        <collision name="collision">
+          <geometry><box><size>0.1500 0.4000 2.5000</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.1500 0.4000 2.5000</size></box></geometry>
+          <material>
+            <ambient>0.85 0.85 0.82 1.0</ambient>
+            <diffuse>0.85 0.85 0.82 1.0</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name="shelf_S1">
+      <static>true</static>
+      <pose>-1.8000 -1.3000 0 0 0 0</pose>
+      <link name="body">
+        <collision name="plinth_collision">
+          <pose>0.0000 0.0000 0.1500 0 0 0</pose>
+          <geometry><box><size>1.2000 0.8000 0.3000</size></box></geometry>
+        </collision>
+        <visual name="plinth_visual">
+          <pose>0.0000 0.0000 0.1500 0 0 0</pose>
+          <geometry><box><size>1.2000 0.8000 0.3000</size></box></geometry>
+          <material>
+            <ambient>0.3 0.33 0.38 1.0</ambient>
+            <diffuse>0.3 0.33 0.38 1.0</diffuse>
+          </material>
+        </visual>
+        <collision name="board_2_collision">
+          <pose>0.0000 0.0000 0.5850 0 0 0</pose>
+          <geometry><box><size>1.2000 0.8000 0.0300</size></box></geometry>
+        </collision>
+        <visual name="board_2_visual">
+          <pose>0.0000 0.0000 0.5850 0 0 0</pose>
+          <geometry><box><size>1.2000 0.8000 0.0300</size></box></geometry>
+          <material>
+            <ambient>0.8 0.68 0.48 1.0</ambient>
+            <diffuse>0.8 0.68 0.48 1.0</diffuse>
+          </material>
+        </visual>
+        <collision name="board_3_collision">
+          <pose>0.0000 0.0000 0.8850 0 0 0</pose>
+          <geometry><box><size>1.2000 0.8000 0.0300</size></box></geometry>
+        </collision>
+        <visual name="board_3_visual">
+          <pose>0.0000 0.0000 0.8850 0 0 0</pose>
+          <geometry><box><size>1.2000 0.8000 0.0300</size></box></geometry>
+          <material>
+            <ambient>0.8 0.68 0.48 1.0</ambient>
+            <diffuse>0.8 0.68 0.48 1.0</diffuse>
+          </material>
+        </visual>
+        <collision name="upright_ws_collision">
+          <pose>-0.5750 -0.3750 0.7000 0 0 0</pose>
+          <geometry><box><size>0.0500 0.0500 0.8000</size></box></geometry>
+        </collision>
+        <visual name="upright_ws_visual">
+          <pose>-0.5750 -0.3750 0.7000 0 0 0</pose>
+          <geometry><box><size>0.0500 0.0500 0.8000</size></box></geometry>
+          <material>
+            <ambient>0.2 0.28 0.4 1.0</ambient>
+            <diffuse>0.2 0.28 0.4 1.0</diffuse>
+          </material>
+        </visual>
+        <collision name="upright_wn_collision">
+          <pose>-0.5750 0.3750 0.7000 0 0 0</pose>
+          <geometry><box><size>0.0500 0.0500 0.8000</size></box></geometry>
+        </collision>
+        <visual name="upright_wn_visual">
+          <pose>-0.5750 0.3750 0.7000 0 0 0</pose>
+          <geometry><box><size>0.0500 0.0500 0.8000</size></box></geometry>
+          <material>
+            <ambient>0.2 0.28 0.4 1.0</ambient>
+            <diffuse>0.2 0.28 0.4 1.0</diffuse>
+          </material>
+        </visual>
+        <collision name="upright_es_collision">
+          <pose>0.5750 -0.3750 0.7000 0 0 0</pose>
+          <geometry><box><size>0.0500 0.0500 0.8000</size></box></geometry>
+        </collision>
+        <visual name="upright_es_visual">
+          <pose>0.5750 -0.3750 0.7000 0 0 0</pose>
+          <geometry><box><size>0.0500 0.0500 0.8000</size></box></geometry>
+          <material>
+            <ambient>0.2 0.28 0.4 1.0</ambient>
+            <diffuse>0.2 0.28 0.4 1.0</diffuse>
+          </material>
+        </visual>
+        <collision name="upright_en_collision">
+          <pose>0.5750 0.3750 0.7000 0 0 0</pose>
+          <geometry><box><size>0.0500 0.0500 0.8000</size></box></geometry>
+        </collision>
+        <visual name="upright_en_visual">
+          <pose>0.5750 0.3750 0.7000 0 0 0</pose>
+          <geometry><box><size>0.0500 0.0500 0.8000</size></box></geometry>
+          <material>
+            <ambient>0.2 0.28 0.4 1.0</ambient>
+            <diffuse>0.2 0.28 0.4 1.0</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name="shelf_S2">
+      <static>true</static>
+      <pose>-0.6000 -1.3000 0 0 0 0</pose>
+      <link name="body">
+        <collision name="plinth_collision">
+          <pose>0.0000 0.0000 0.1500 0 0 0</pose>
+          <geometry><box><size>1.2000 0.8000 0.3000</size></box></geometry>
+        </collision>
+        <visual name="plinth_visual">
+          <pose>0.0000 0.0000 0.1500 0 0 0</pose>
+          <geometry><box><size>1.2000 0.8000 0.3000</size></box></geometry>
+          <material>
+            <ambient>0.3 0.33 0.38 1.0</ambient>
+            <diffuse>0.3 0.33 0.38 1.0</diffuse>
+          </material>
+        </visual>
+        <collision name="board_2_collision">
+          <pose>0.0000 0.0000 0.5850 0 0 0</pose>
+          <geometry><box><size>1.2000 0.8000 0.0300</size></box></geometry>
+        </collision>
+        <visual name="board_2_visual">
+          <pose>0.0000 0.0000 0.5850 0 0 0</pose>
+          <geometry><box><size>1.2000 0.8000 0.0300</size></box></geometry>
+          <material>
+            <ambient>0.8 0.68 0.48 1.0</ambient>
+            <diffuse>0.8 0.68 0.48 1.0</diffuse>
+          </material>
+        </visual>
+        <collision name="board_3_collision">
+          <pose>0.0000 0.0000 0.8850 0 0 0</pose>
+          <geometry><box><size>1.2000 0.8000 0.0300</size></box></geometry>
+        </collision>
+        <visual name="board_3_visual">
+          <pose>0.0000 0.0000 0.8850 0 0 0</pose>
+          <geometry><box><size>1.2000 0.8000 0.0300</size></box></geometry>
+          <material>
+            <ambient>0.8 0.68 0.48 1.0</ambient>
+            <diffuse>0.8 0.68 0.48 1.0</diffuse>
+          </material>
+        </visual>
+        <collision name="upright_ws_collision">
+          <pose>-0.5750 -0.3750 0.7000 0 0 0</pose>
+          <geometry><box><size>0.0500 0.0500 0.8000</size></box></geometry>
+        </collision>
+        <visual name="upright_ws_visual">
+          <pose>-0.5750 -0.3750 0.7000 0 0 0</pose>
+          <geometry><box><size>0.0500 0.0500 0.8000</size></box></geometry>
+          <material>
+            <ambient>0.2 0.28 0.4 1.0</ambient>
+            <diffuse>0.2 0.28 0.4 1.0</diffuse>
+          </material>
+        </visual>
+        <collision name="upright_wn_collision">
+          <pose>-0.5750 0.3750 0.7000 0 0 0</pose>
+          <geometry><box><size>0.0500 0.0500 0.8000</size></box></geometry>
+        </collision>
+        <visual name="upright_wn_visual">
+          <pose>-0.5750 0.3750 0.7000 0 0 0</pose>
+          <geometry><box><size>0.0500 0.0500 0.8000</size></box></geometry>
+          <material>
+            <ambient>0.2 0.28 0.4 1.0</ambient>
+            <diffuse>0.2 0.28 0.4 1.0</diffuse>
+          </material>
+        </visual>
+        <collision name="upright_es_collision">
+          <pose>0.5750 -0.3750 0.7000 0 0 0</pose>
+          <geometry><box><size>0.0500 0.0500 0.8000</size></box></geometry>
+        </collision>
+        <visual name="upright_es_visual">
+          <pose>0.5750 -0.3750 0.7000 0 0 0</pose>
+          <geometry><box><size>0.0500 0.0500 0.8000</size></box></geometry>
+          <material>
+            <ambient>0.2 0.28 0.4 1.0</ambient>
+            <diffuse>0.2 0.28 0.4 1.0</diffuse>
+          </material>
+        </visual>
+        <collision name="upright_en_collision">
+          <pose>0.5750 0.3750 0.7000 0 0 0</pose>
+          <geometry><box><size>0.0500 0.0500 0.8000</size></box></geometry>
+        </collision>
+        <visual name="upright_en_visual">
+          <pose>0.5750 0.3750 0.7000 0 0 0</pose>
+          <geometry><box><size>0.0500 0.0500 0.8000</size></box></geometry>
+          <material>
+            <ambient>0.2 0.28 0.4 1.0</ambient>
+            <diffuse>0.2 0.28 0.4 1.0</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name="shelf_S3">
+      <static>true</static>
+      <pose>0.6000 -1.3000 0 0 0 0</pose>
+      <link name="body">
+        <collision name="plinth_collision">
+          <pose>0.0000 0.0000 0.1500 0 0 0</pose>
+          <geometry><box><size>1.2000 0.8000 0.3000</size></box></geometry>
+        </collision>
+        <visual name="plinth_visual">
+          <pose>0.0000 0.0000 0.1500 0 0 0</pose>
+          <geometry><box><size>1.2000 0.8000 0.3000</size></box></geometry>
+          <material>
+            <ambient>0.3 0.33 0.38 1.0</ambient>
+            <diffuse>0.3 0.33 0.38 1.0</diffuse>
+          </material>
+        </visual>
+        <collision name="board_2_collision">
+          <pose>0.0000 0.0000 0.5850 0 0 0</pose>
+          <geometry><box><size>1.2000 0.8000 0.0300</size></box></geometry>
+        </collision>
+        <visual name="board_2_visual">
+          <pose>0.0000 0.0000 0.5850 0 0 0</pose>
+          <geometry><box><size>1.2000 0.8000 0.0300</size></box></geometry>
+          <material>
+            <ambient>0.8 0.68 0.48 1.0</ambient>
+            <diffuse>0.8 0.68 0.48 1.0</diffuse>
+          </material>
+        </visual>
+        <collision name="board_3_collision">
+          <pose>0.0000 0.0000 0.8850 0 0 0</pose>
+          <geometry><box><size>1.2000 0.8000 0.0300</size></box></geometry>
+        </collision>
+        <visual name="board_3_visual">
+          <pose>0.0000 0.0000 0.8850 0 0 0</pose>
+          <geometry><box><size>1.2000 0.8000 0.0300</size></box></geometry>
+          <material>
+            <ambient>0.8 0.68 0.48 1.0</ambient>
+            <diffuse>0.8 0.68 0.48 1.0</diffuse>
+          </material>
+        </visual>
+        <collision name="upright_ws_collision">
+          <pose>-0.5750 -0.3750 0.7000 0 0 0</pose>
+          <geometry><box><size>0.0500 0.0500 0.8000</size></box></geometry>
+        </collision>
+        <visual name="upright_ws_visual">
+          <pose>-0.5750 -0.3750 0.7000 0 0 0</pose>
+          <geometry><box><size>0.0500 0.0500 0.8000</size></box></geometry>
+          <material>
+            <ambient>0.2 0.28 0.4 1.0</ambient>
+            <diffuse>0.2 0.28 0.4 1.0</diffuse>
+          </material>
+        </visual>
+        <collision name="upright_wn_collision">
+          <pose>-0.5750 0.3750 0.7000 0 0 0</pose>
+          <geometry><box><size>0.0500 0.0500 0.8000</size></box></geometry>
+        </collision>
+        <visual name="upright_wn_visual">
+          <pose>-0.5750 0.3750 0.7000 0 0 0</pose>
+          <geometry><box><size>0.0500 0.0500 0.8000</size></box></geometry>
+          <material>
+            <ambient>0.2 0.28 0.4 1.0</ambient>
+            <diffuse>0.2 0.28 0.4 1.0</diffuse>
+          </material>
+        </visual>
+        <collision name="upright_es_collision">
+          <pose>0.5750 -0.3750 0.7000 0 0 0</pose>
+          <geometry><box><size>0.0500 0.0500 0.8000</size></box></geometry>
+        </collision>
+        <visual name="upright_es_visual">
+          <pose>0.5750 -0.3750 0.7000 0 0 0</pose>
+          <geometry><box><size>0.0500 0.0500 0.8000</size></box></geometry>
+          <material>
+            <ambient>0.2 0.28 0.4 1.0</ambient>
+            <diffuse>0.2 0.28 0.4 1.0</diffuse>
+          </material>
+        </visual>
+        <collision name="upright_en_collision">
+          <pose>0.5750 0.3750 0.7000 0 0 0</pose>
+          <geometry><box><size>0.0500 0.0500 0.8000</size></box></geometry>
+        </collision>
+        <visual name="upright_en_visual">
+          <pose>0.5750 0.3750 0.7000 0 0 0</pose>
+          <geometry><box><size>0.0500 0.0500 0.8000</size></box></geometry>
+          <material>
+            <ambient>0.2 0.28 0.4 1.0</ambient>
+            <diffuse>0.2 0.28 0.4 1.0</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name="shelf_S4">
+      <static>true</static>
+      <pose>1.8000 -1.3000 0 0 0 0</pose>
+      <link name="body">
+        <collision name="plinth_collision">
+          <pose>0.0000 0.0000 0.1500 0 0 0</pose>
+          <geometry><box><size>1.2000 0.8000 0.3000</size></box></geometry>
+        </collision>
+        <visual name="plinth_visual">
+          <pose>0.0000 0.0000 0.1500 0 0 0</pose>
+          <geometry><box><size>1.2000 0.8000 0.3000</size></box></geometry>
+          <material>
+            <ambient>0.3 0.33 0.38 1.0</ambient>
+            <diffuse>0.3 0.33 0.38 1.0</diffuse>
+          </material>
+        </visual>
+        <collision name="board_2_collision">
+          <pose>0.0000 0.0000 0.5850 0 0 0</pose>
+          <geometry><box><size>1.2000 0.8000 0.0300</size></box></geometry>
+        </collision>
+        <visual name="board_2_visual">
+          <pose>0.0000 0.0000 0.5850 0 0 0</pose>
+          <geometry><box><size>1.2000 0.8000 0.0300</size></box></geometry>
+          <material>
+            <ambient>0.8 0.68 0.48 1.0</ambient>
+            <diffuse>0.8 0.68 0.48 1.0</diffuse>
+          </material>
+        </visual>
+        <collision name="board_3_collision">
+          <pose>0.0000 0.0000 0.8850 0 0 0</pose>
+          <geometry><box><size>1.2000 0.8000 0.0300</size></box></geometry>
+        </collision>
+        <visual name="board_3_visual">
+          <pose>0.0000 0.0000 0.8850 0 0 0</pose>
+          <geometry><box><size>1.2000 0.8000 0.0300</size></box></geometry>
+          <material>
+            <ambient>0.8 0.68 0.48 1.0</ambient>
+            <diffuse>0.8 0.68 0.48 1.0</diffuse>
+          </material>
+        </visual>
+        <collision name="upright_ws_collision">
+          <pose>-0.5750 -0.3750 0.7000 0 0 0</pose>
+          <geometry><box><size>0.0500 0.0500 0.8000</size></box></geometry>
+        </collision>
+        <visual name="upright_ws_visual">
+          <pose>-0.5750 -0.3750 0.7000 0 0 0</pose>
+          <geometry><box><size>0.0500 0.0500 0.8000</size></box></geometry>
+          <material>
+            <ambient>0.2 0.28 0.4 1.0</ambient>
+            <diffuse>0.2 0.28 0.4 1.0</diffuse>
+          </material>
+        </visual>
+        <collision name="upright_wn_collision">
+          <pose>-0.5750 0.3750 0.7000 0 0 0</pose>
+          <geometry><box><size>0.0500 0.0500 0.8000</size></box></geometry>
+        </collision>
+        <visual name="upright_wn_visual">
+          <pose>-0.5750 0.3750 0.7000 0 0 0</pose>
+          <geometry><box><size>0.0500 0.0500 0.8000</size></box></geometry>
+          <material>
+            <ambient>0.2 0.28 0.4 1.0</ambient>
+            <diffuse>0.2 0.28 0.4 1.0</diffuse>
+          </material>
+        </visual>
+        <collision name="upright_es_collision">
+          <pose>0.5750 -0.3750 0.7000 0 0 0</pose>
+          <geometry><box><size>0.0500 0.0500 0.8000</size></box></geometry>
+        </collision>
+        <visual name="upright_es_visual">
+          <pose>0.5750 -0.3750 0.7000 0 0 0</pose>
+          <geometry><box><size>0.0500 0.0500 0.8000</size></box></geometry>
+          <material>
+            <ambient>0.2 0.28 0.4 1.0</ambient>
+            <diffuse>0.2 0.28 0.4 1.0</diffuse>
+          </material>
+        </visual>
+        <collision name="upright_en_collision">
+          <pose>0.5750 0.3750 0.7000 0 0 0</pose>
+          <geometry><box><size>0.0500 0.0500 0.8000</size></box></geometry>
+        </collision>
+        <visual name="upright_en_visual">
+          <pose>0.5750 0.3750 0.7000 0 0 0</pose>
+          <geometry><box><size>0.0500 0.0500 0.8000</size></box></geometry>
+          <material>
+            <ambient>0.2 0.28 0.4 1.0</ambient>
+            <diffuse>0.2 0.28 0.4 1.0</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name="shelf_N1">
+      <static>true</static>
+      <pose>-1.8000 1.3000 0 0 0 0</pose>
+      <link name="body">
+        <collision name="plinth_collision">
+          <pose>0.0000 0.0000 0.1500 0 0 0</pose>
+          <geometry><box><size>1.2000 0.8000 0.3000</size></box></geometry>
+        </collision>
+        <visual name="plinth_visual">
+          <pose>0.0000 0.0000 0.1500 0 0 0</pose>
+          <geometry><box><size>1.2000 0.8000 0.3000</size></box></geometry>
+          <material>
+            <ambient>0.3 0.33 0.38 1.0</ambient>
+            <diffuse>0.3 0.33 0.38 1.0</diffuse>
+          </material>
+        </visual>
+        <collision name="board_2_collision">
+          <pose>0.0000 0.0000 0.5850 0 0 0</pose>
+          <geometry><box><size>1.2000 0.8000 0.0300</size></box></geometry>
+        </collision>
+        <visual name="board_2_visual">
+          <pose>0.0000 0.0000 0.5850 0 0 0</pose>
+          <geometry><box><size>1.2000 0.8000 0.0300</size></box></geometry>
+          <material>
+            <ambient>0.8 0.68 0.48 1.0</ambient>
+            <diffuse>0.8 0.68 0.48 1.0</diffuse>
+          </material>
+        </visual>
+        <collision name="board_3_collision">
+          <pose>0.0000 0.0000 0.8850 0 0 0</pose>
+          <geometry><box><size>1.2000 0.8000 0.0300</size></box></geometry>
+        </collision>
+        <visual name="board_3_visual">
+          <pose>0.0000 0.0000 0.8850 0 0 0</pose>
+          <geometry><box><size>1.2000 0.8000 0.0300</size></box></geometry>
+          <material>
+            <ambient>0.8 0.68 0.48 1.0</ambient>
+            <diffuse>0.8 0.68 0.48 1.0</diffuse>
+          </material>
+        </visual>
+        <collision name="upright_ws_collision">
+          <pose>-0.5750 -0.3750 0.7000 0 0 0</pose>
+          <geometry><box><size>0.0500 0.0500 0.8000</size></box></geometry>
+        </collision>
+        <visual name="upright_ws_visual">
+          <pose>-0.5750 -0.3750 0.7000 0 0 0</pose>
+          <geometry><box><size>0.0500 0.0500 0.8000</size></box></geometry>
+          <material>
+            <ambient>0.2 0.28 0.4 1.0</ambient>
+            <diffuse>0.2 0.28 0.4 1.0</diffuse>
+          </material>
+        </visual>
+        <collision name="upright_wn_collision">
+          <pose>-0.5750 0.3750 0.7000 0 0 0</pose>
+          <geometry><box><size>0.0500 0.0500 0.8000</size></box></geometry>
+        </collision>
+        <visual name="upright_wn_visual">
+          <pose>-0.5750 0.3750 0.7000 0 0 0</pose>
+          <geometry><box><size>0.0500 0.0500 0.8000</size></box></geometry>
+          <material>
+            <ambient>0.2 0.28 0.4 1.0</ambient>
+            <diffuse>0.2 0.28 0.4 1.0</diffuse>
+          </material>
+        </visual>
+        <collision name="upright_es_collision">
+          <pose>0.5750 -0.3750 0.7000 0 0 0</pose>
+          <geometry><box><size>0.0500 0.0500 0.8000</size></box></geometry>
+        </collision>
+        <visual name="upright_es_visual">
+          <pose>0.5750 -0.3750 0.7000 0 0 0</pose>
+          <geometry><box><size>0.0500 0.0500 0.8000</size></box></geometry>
+          <material>
+            <ambient>0.2 0.28 0.4 1.0</ambient>
+            <diffuse>0.2 0.28 0.4 1.0</diffuse>
+          </material>
+        </visual>
+        <collision name="upright_en_collision">
+          <pose>0.5750 0.3750 0.7000 0 0 0</pose>
+          <geometry><box><size>0.0500 0.0500 0.8000</size></box></geometry>
+        </collision>
+        <visual name="upright_en_visual">
+          <pose>0.5750 0.3750 0.7000 0 0 0</pose>
+          <geometry><box><size>0.0500 0.0500 0.8000</size></box></geometry>
+          <material>
+            <ambient>0.2 0.28 0.4 1.0</ambient>
+            <diffuse>0.2 0.28 0.4 1.0</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name="shelf_N2">
+      <static>true</static>
+      <pose>-0.6000 1.3000 0 0 0 0</pose>
+      <link name="body">
+        <collision name="plinth_collision">
+          <pose>0.0000 0.0000 0.1500 0 0 0</pose>
+          <geometry><box><size>1.2000 0.8000 0.3000</size></box></geometry>
+        </collision>
+        <visual name="plinth_visual">
+          <pose>0.0000 0.0000 0.1500 0 0 0</pose>
+          <geometry><box><size>1.2000 0.8000 0.3000</size></box></geometry>
+          <material>
+            <ambient>0.3 0.33 0.38 1.0</ambient>
+            <diffuse>0.3 0.33 0.38 1.0</diffuse>
+          </material>
+        </visual>
+        <collision name="board_2_collision">
+          <pose>0.0000 0.0000 0.5850 0 0 0</pose>
+          <geometry><box><size>1.2000 0.8000 0.0300</size></box></geometry>
+        </collision>
+        <visual name="board_2_visual">
+          <pose>0.0000 0.0000 0.5850 0 0 0</pose>
+          <geometry><box><size>1.2000 0.8000 0.0300</size></box></geometry>
+          <material>
+            <ambient>0.8 0.68 0.48 1.0</ambient>
+            <diffuse>0.8 0.68 0.48 1.0</diffuse>
+          </material>
+        </visual>
+        <collision name="board_3_collision">
+          <pose>0.0000 0.0000 0.8850 0 0 0</pose>
+          <geometry><box><size>1.2000 0.8000 0.0300</size></box></geometry>
+        </collision>
+        <visual name="board_3_visual">
+          <pose>0.0000 0.0000 0.8850 0 0 0</pose>
+          <geometry><box><size>1.2000 0.8000 0.0300</size></box></geometry>
+          <material>
+            <ambient>0.8 0.68 0.48 1.0</ambient>
+            <diffuse>0.8 0.68 0.48 1.0</diffuse>
+          </material>
+        </visual>
+        <collision name="upright_ws_collision">
+          <pose>-0.5750 -0.3750 0.7000 0 0 0</pose>
+          <geometry><box><size>0.0500 0.0500 0.8000</size></box></geometry>
+        </collision>
+        <visual name="upright_ws_visual">
+          <pose>-0.5750 -0.3750 0.7000 0 0 0</pose>
+          <geometry><box><size>0.0500 0.0500 0.8000</size></box></geometry>
+          <material>
+            <ambient>0.2 0.28 0.4 1.0</ambient>
+            <diffuse>0.2 0.28 0.4 1.0</diffuse>
+          </material>
+        </visual>
+        <collision name="upright_wn_collision">
+          <pose>-0.5750 0.3750 0.7000 0 0 0</pose>
+          <geometry><box><size>0.0500 0.0500 0.8000</size></box></geometry>
+        </collision>
+        <visual name="upright_wn_visual">
+          <pose>-0.5750 0.3750 0.7000 0 0 0</pose>
+          <geometry><box><size>0.0500 0.0500 0.8000</size></box></geometry>
+          <material>
+            <ambient>0.2 0.28 0.4 1.0</ambient>
+            <diffuse>0.2 0.28 0.4 1.0</diffuse>
+          </material>
+        </visual>
+        <collision name="upright_es_collision">
+          <pose>0.5750 -0.3750 0.7000 0 0 0</pose>
+          <geometry><box><size>0.0500 0.0500 0.8000</size></box></geometry>
+        </collision>
+        <visual name="upright_es_visual">
+          <pose>0.5750 -0.3750 0.7000 0 0 0</pose>
+          <geometry><box><size>0.0500 0.0500 0.8000</size></box></geometry>
+          <material>
+            <ambient>0.2 0.28 0.4 1.0</ambient>
+            <diffuse>0.2 0.28 0.4 1.0</diffuse>
+          </material>
+        </visual>
+        <collision name="upright_en_collision">
+          <pose>0.5750 0.3750 0.7000 0 0 0</pose>
+          <geometry><box><size>0.0500 0.0500 0.8000</size></box></geometry>
+        </collision>
+        <visual name="upright_en_visual">
+          <pose>0.5750 0.3750 0.7000 0 0 0</pose>
+          <geometry><box><size>0.0500 0.0500 0.8000</size></box></geometry>
+          <material>
+            <ambient>0.2 0.28 0.4 1.0</ambient>
+            <diffuse>0.2 0.28 0.4 1.0</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name="shelf_N3">
+      <static>true</static>
+      <pose>0.6000 1.3000 0 0 0 0</pose>
+      <link name="body">
+        <collision name="plinth_collision">
+          <pose>0.0000 0.0000 0.1500 0 0 0</pose>
+          <geometry><box><size>1.2000 0.8000 0.3000</size></box></geometry>
+        </collision>
+        <visual name="plinth_visual">
+          <pose>0.0000 0.0000 0.1500 0 0 0</pose>
+          <geometry><box><size>1.2000 0.8000 0.3000</size></box></geometry>
+          <material>
+            <ambient>0.3 0.33 0.38 1.0</ambient>
+            <diffuse>0.3 0.33 0.38 1.0</diffuse>
+          </material>
+        </visual>
+        <collision name="board_2_collision">
+          <pose>0.0000 0.0000 0.5850 0 0 0</pose>
+          <geometry><box><size>1.2000 0.8000 0.0300</size></box></geometry>
+        </collision>
+        <visual name="board_2_visual">
+          <pose>0.0000 0.0000 0.5850 0 0 0</pose>
+          <geometry><box><size>1.2000 0.8000 0.0300</size></box></geometry>
+          <material>
+            <ambient>0.8 0.68 0.48 1.0</ambient>
+            <diffuse>0.8 0.68 0.48 1.0</diffuse>
+          </material>
+        </visual>
+        <collision name="board_3_collision">
+          <pose>0.0000 0.0000 0.8850 0 0 0</pose>
+          <geometry><box><size>1.2000 0.8000 0.0300</size></box></geometry>
+        </collision>
+        <visual name="board_3_visual">
+          <pose>0.0000 0.0000 0.8850 0 0 0</pose>
+          <geometry><box><size>1.2000 0.8000 0.0300</size></box></geometry>
+          <material>
+            <ambient>0.8 0.68 0.48 1.0</ambient>
+            <diffuse>0.8 0.68 0.48 1.0</diffuse>
+          </material>
+        </visual>
+        <collision name="upright_ws_collision">
+          <pose>-0.5750 -0.3750 0.7000 0 0 0</pose>
+          <geometry><box><size>0.0500 0.0500 0.8000</size></box></geometry>
+        </collision>
+        <visual name="upright_ws_visual">
+          <pose>-0.5750 -0.3750 0.7000 0 0 0</pose>
+          <geometry><box><size>0.0500 0.0500 0.8000</size></box></geometry>
+          <material>
+            <ambient>0.2 0.28 0.4 1.0</ambient>
+            <diffuse>0.2 0.28 0.4 1.0</diffuse>
+          </material>
+        </visual>
+        <collision name="upright_wn_collision">
+          <pose>-0.5750 0.3750 0.7000 0 0 0</pose>
+          <geometry><box><size>0.0500 0.0500 0.8000</size></box></geometry>
+        </collision>
+        <visual name="upright_wn_visual">
+          <pose>-0.5750 0.3750 0.7000 0 0 0</pose>
+          <geometry><box><size>0.0500 0.0500 0.8000</size></box></geometry>
+          <material>
+            <ambient>0.2 0.28 0.4 1.0</ambient>
+            <diffuse>0.2 0.28 0.4 1.0</diffuse>
+          </material>
+        </visual>
+        <collision name="upright_es_collision">
+          <pose>0.5750 -0.3750 0.7000 0 0 0</pose>
+          <geometry><box><size>0.0500 0.0500 0.8000</size></box></geometry>
+        </collision>
+        <visual name="upright_es_visual">
+          <pose>0.5750 -0.3750 0.7000 0 0 0</pose>
+          <geometry><box><size>0.0500 0.0500 0.8000</size></box></geometry>
+          <material>
+            <ambient>0.2 0.28 0.4 1.0</ambient>
+            <diffuse>0.2 0.28 0.4 1.0</diffuse>
+          </material>
+        </visual>
+        <collision name="upright_en_collision">
+          <pose>0.5750 0.3750 0.7000 0 0 0</pose>
+          <geometry><box><size>0.0500 0.0500 0.8000</size></box></geometry>
+        </collision>
+        <visual name="upright_en_visual">
+          <pose>0.5750 0.3750 0.7000 0 0 0</pose>
+          <geometry><box><size>0.0500 0.0500 0.8000</size></box></geometry>
+          <material>
+            <ambient>0.2 0.28 0.4 1.0</ambient>
+            <diffuse>0.2 0.28 0.4 1.0</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name="receiving_table">
+      <static>true</static>
+      <pose>-4.8000 0.0000 0 0 0 0</pose>
+      <link name="body">
+        <collision name="body_collision">
+          <pose>0.0000 0.0000 0.3550 0 0 0</pose>
+          <geometry><box><size>0.7000 1.5000 0.7100</size></box></geometry>
+        </collision>
+        <visual name="body_visual">
+          <pose>0.0000 0.0000 0.3550 0 0 0</pose>
+          <geometry><box><size>0.7000 1.5000 0.7100</size></box></geometry>
+          <material>
+            <ambient>0.55 0.58 0.62 1.0</ambient>
+            <diffuse>0.55 0.58 0.62 1.0</diffuse>
+          </material>
+        </visual>
+        <collision name="top_collision">
+          <pose>0.0000 0.0000 0.7300 0 0 0</pose>
+          <geometry><box><size>0.8000 1.6000 0.0400</size></box></geometry>
+        </collision>
+        <visual name="top_visual">
+          <pose>0.0000 0.0000 0.7300 0 0 0</pose>
+          <geometry><box><size>0.8000 1.6000 0.0400</size></box></geometry>
+          <material>
+            <ambient>0.55 0.45 0.32 1.0</ambient>
+            <diffuse>0.55 0.45 0.32 1.0</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name="packing_table">
+      <static>true</static>
+      <pose>4.8000 0.0000 0 0 0 0</pose>
+      <link name="body">
+        <collision name="body_collision">
+          <pose>0.0000 0.0000 0.3550 0 0 0</pose>
+          <geometry><box><size>0.7000 1.5000 0.7100</size></box></geometry>
+        </collision>
+        <visual name="body_visual">
+          <pose>0.0000 0.0000 0.3550 0 0 0</pose>
+          <geometry><box><size>0.7000 1.5000 0.7100</size></box></geometry>
+          <material>
+            <ambient>0.55 0.58 0.62 1.0</ambient>
+            <diffuse>0.55 0.58 0.62 1.0</diffuse>
+          </material>
+        </visual>
+        <collision name="top_collision">
+          <pose>0.0000 0.0000 0.7300 0 0 0</pose>
+          <geometry><box><size>0.8000 1.6000 0.0400</size></box></geometry>
+        </collision>
+        <visual name="top_visual">
+          <pose>0.0000 0.0000 0.7300 0 0 0</pose>
+          <geometry><box><size>0.8000 1.6000 0.0400</size></box></geometry>
+          <material>
+            <ambient>0.55 0.45 0.32 1.0</ambient>
+            <diffuse>0.55 0.45 0.32 1.0</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name="bin_1">
+      <static>true</static>
+      <pose>4.8000 -0.3500 0 0 0 0</pose>
+      <link name="body">
+        <collision name="floor_collision">
+          <pose>0.0000 0.0000 0.7550 0 0 0</pose>
+          <geometry><box><size>0.3000 0.3000 0.0100</size></box></geometry>
+        </collision>
+        <visual name="floor_visual">
+          <pose>0.0000 0.0000 0.7550 0 0 0</pose>
+          <geometry><box><size>0.3000 0.3000 0.0100</size></box></geometry>
+          <material>
+            <ambient>0.62 0.72 0.84 1.0</ambient>
+            <diffuse>0.62 0.72 0.84 1.0</diffuse>
+          </material>
+        </visual>
+        <collision name="wall_n_collision">
+          <pose>0.0000 0.1450 0.8100 0 0 0</pose>
+          <geometry><box><size>0.3000 0.0100 0.1200</size></box></geometry>
+        </collision>
+        <visual name="wall_n_visual">
+          <pose>0.0000 0.1450 0.8100 0 0 0</pose>
+          <geometry><box><size>0.3000 0.0100 0.1200</size></box></geometry>
+          <material>
+            <ambient>0.62 0.72 0.84 1.0</ambient>
+            <diffuse>0.62 0.72 0.84 1.0</diffuse>
+          </material>
+        </visual>
+        <collision name="wall_s_collision">
+          <pose>0.0000 -0.1450 0.8100 0 0 0</pose>
+          <geometry><box><size>0.3000 0.0100 0.1200</size></box></geometry>
+        </collision>
+        <visual name="wall_s_visual">
+          <pose>0.0000 -0.1450 0.8100 0 0 0</pose>
+          <geometry><box><size>0.3000 0.0100 0.1200</size></box></geometry>
+          <material>
+            <ambient>0.62 0.72 0.84 1.0</ambient>
+            <diffuse>0.62 0.72 0.84 1.0</diffuse>
+          </material>
+        </visual>
+        <collision name="wall_e_collision">
+          <pose>0.1450 0.0000 0.8100 0 0 0</pose>
+          <geometry><box><size>0.0100 0.3000 0.1200</size></box></geometry>
+        </collision>
+        <visual name="wall_e_visual">
+          <pose>0.1450 0.0000 0.8100 0 0 0</pose>
+          <geometry><box><size>0.0100 0.3000 0.1200</size></box></geometry>
+          <material>
+            <ambient>0.62 0.72 0.84 1.0</ambient>
+            <diffuse>0.62 0.72 0.84 1.0</diffuse>
+          </material>
+        </visual>
+        <collision name="wall_w_collision">
+          <pose>-0.1450 0.0000 0.8100 0 0 0</pose>
+          <geometry><box><size>0.0100 0.3000 0.1200</size></box></geometry>
+        </collision>
+        <visual name="wall_w_visual">
+          <pose>-0.1450 0.0000 0.8100 0 0 0</pose>
+          <geometry><box><size>0.0100 0.3000 0.1200</size></box></geometry>
+          <material>
+            <ambient>0.62 0.72 0.84 1.0</ambient>
+            <diffuse>0.62 0.72 0.84 1.0</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name="bin_2">
+      <static>true</static>
+      <pose>4.8000 0.3500 0 0 0 0</pose>
+      <link name="body">
+        <collision name="floor_collision">
+          <pose>0.0000 0.0000 0.7550 0 0 0</pose>
+          <geometry><box><size>0.3000 0.3000 0.0100</size></box></geometry>
+        </collision>
+        <visual name="floor_visual">
+          <pose>0.0000 0.0000 0.7550 0 0 0</pose>
+          <geometry><box><size>0.3000 0.3000 0.0100</size></box></geometry>
+          <material>
+            <ambient>0.62 0.72 0.84 1.0</ambient>
+            <diffuse>0.62 0.72 0.84 1.0</diffuse>
+          </material>
+        </visual>
+        <collision name="wall_n_collision">
+          <pose>0.0000 0.1450 0.8100 0 0 0</pose>
+          <geometry><box><size>0.3000 0.0100 0.1200</size></box></geometry>
+        </collision>
+        <visual name="wall_n_visual">
+          <pose>0.0000 0.1450 0.8100 0 0 0</pose>
+          <geometry><box><size>0.3000 0.0100 0.1200</size></box></geometry>
+          <material>
+            <ambient>0.62 0.72 0.84 1.0</ambient>
+            <diffuse>0.62 0.72 0.84 1.0</diffuse>
+          </material>
+        </visual>
+        <collision name="wall_s_collision">
+          <pose>0.0000 -0.1450 0.8100 0 0 0</pose>
+          <geometry><box><size>0.3000 0.0100 0.1200</size></box></geometry>
+        </collision>
+        <visual name="wall_s_visual">
+          <pose>0.0000 -0.1450 0.8100 0 0 0</pose>
+          <geometry><box><size>0.3000 0.0100 0.1200</size></box></geometry>
+          <material>
+            <ambient>0.62 0.72 0.84 1.0</ambient>
+            <diffuse>0.62 0.72 0.84 1.0</diffuse>
+          </material>
+        </visual>
+        <collision name="wall_e_collision">
+          <pose>0.1450 0.0000 0.8100 0 0 0</pose>
+          <geometry><box><size>0.0100 0.3000 0.1200</size></box></geometry>
+        </collision>
+        <visual name="wall_e_visual">
+          <pose>0.1450 0.0000 0.8100 0 0 0</pose>
+          <geometry><box><size>0.0100 0.3000 0.1200</size></box></geometry>
+          <material>
+            <ambient>0.62 0.72 0.84 1.0</ambient>
+            <diffuse>0.62 0.72 0.84 1.0</diffuse>
+          </material>
+        </visual>
+        <collision name="wall_w_collision">
+          <pose>-0.1450 0.0000 0.8100 0 0 0</pose>
+          <geometry><box><size>0.0100 0.3000 0.1200</size></box></geometry>
+        </collision>
+        <visual name="wall_w_visual">
+          <pose>-0.1450 0.0000 0.8100 0 0 0</pose>
+          <geometry><box><size>0.0100 0.3000 0.1200</size></box></geometry>
+          <material>
+            <ambient>0.62 0.72 0.84 1.0</ambient>
+            <diffuse>0.62 0.72 0.84 1.0</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name="column_1">
+      <static>true</static>
+      <pose>1.8000 -3.0000 0 0 0 0</pose>
+      <link name="body">
+        <collision name="shaft_collision">
+          <pose>0.0000 0.0000 1.2500 0 0 0</pose>
+          <geometry><box><size>0.4000 0.4000 2.5000</size></box></geometry>
+        </collision>
+        <visual name="shaft_visual">
+          <pose>0.0000 0.0000 1.2500 0 0 0</pose>
+          <geometry><box><size>0.4000 0.4000 2.5000</size></box></geometry>
+          <material>
+            <ambient>0.48 0.5 0.52 1.0</ambient>
+            <diffuse>0.48 0.5 0.52 1.0</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name="column_2">
+      <static>true</static>
+      <pose>-1.5000 3.0000 0 0 0 0</pose>
+      <link name="body">
+        <collision name="shaft_collision">
+          <pose>0.0000 0.0000 1.2500 0 0 0</pose>
+          <geometry><box><size>0.4000 0.4000 2.5000</size></box></geometry>
+        </collision>
+        <visual name="shaft_visual">
+          <pose>0.0000 0.0000 1.2500 0 0 0</pose>
+          <geometry><box><size>0.4000 0.4000 2.5000</size></box></geometry>
+          <material>
+            <ambient>0.48 0.5 0.52 1.0</ambient>
+            <diffuse>0.48 0.5 0.52 1.0</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <include>
+      <name>art_S1_L1_n1</name>
+      <uri>model://cereal_box</uri>
+      <pose>-2.2049 -1.0501 0.3000 0 0 -0.0264</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <name>art_S1_L1_n4</name>
+      <uri>model://cereal_box</uri>
+      <pose>-1.5921 -1.0522 0.3000 0 0 0.0563</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <name>art_S1_L1_s2</name>
+      <uri>model://juice_carton</uri>
+      <pose>-1.9982 -1.5580 0.3000 0 0 -0.0956</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <name>art_S1_L1_s3</name>
+      <uri>model://jam_jar</uri>
+      <pose>-1.7992 -1.5412 0.3000 0 0 -0.0622</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <name>art_S1_L1_s4</name>
+      <uri>model://water_bottle</uri>
+      <pose>-1.5955 -1.5494 0.3000 0 0 0.1381</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <name>art_S1_L2_s5</name>
+      <uri>model://jam_jar</uri>
+      <pose>-1.3901 -1.5428 0.6000 0 0 -0.1985</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <name>art_S2_L1_n4</name>
+      <uri>model://juice_carton</uri>
+      <pose>-0.3951 -1.0519 0.3000 0 0 0.0863</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <name>art_S2_L1_s4</name>
+      <uri>model://jam_jar</uri>
+      <pose>-0.3998 -1.5444 0.3000 0 0 0.0110</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <name>art_S2_L2_n2</name>
+      <uri>model://cereal_box</uri>
+      <pose>-0.8038 -1.0430 0.6000 0 0 0.0601</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <name>art_S2_L2_n5</name>
+      <uri>model://juice_carton</uri>
+      <pose>-0.1904 -1.0446 0.6000 0 0 0.0207</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <name>art_S2_L2_s2</name>
+      <uri>model://parcel</uri>
+      <pose>-0.8031 -1.5431 0.6000 0 0 -0.0768</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <name>art_S2_L3_s2</name>
+      <uri>model://parcel</uri>
+      <pose>-0.8059 -1.5410 0.9000 0 0 -0.0099</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <name>art_S3_L1_n4</name>
+      <uri>model://parcel</uri>
+      <pose>0.8025 -1.0478 0.3000 0 0 -0.0219</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <name>art_S3_L1_n5</name>
+      <uri>model://juice_carton</uri>
+      <pose>1.0027 -1.0490 0.3000 0 0 -0.1671</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <name>art_S3_L1_s1</name>
+      <uri>model://parcel</uri>
+      <pose>0.2059 -1.5437 0.3000 0 0 -0.1281</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <name>art_S3_L1_s4</name>
+      <uri>model://cereal_box</uri>
+      <pose>0.7991 -1.5449 0.3000 0 0 -0.1146</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <name>art_S3_L1_s5</name>
+      <uri>model://parcel</uri>
+      <pose>0.9937 -1.5542 0.3000 0 0 -0.1741</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <name>art_S3_L2_n1</name>
+      <uri>model://juice_carton</uri>
+      <pose>0.2031 -1.0470 0.6000 0 0 -0.1076</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <name>art_S3_L2_n4</name>
+      <uri>model://soup_can</uri>
+      <pose>0.7977 -1.0516 0.6000 0 0 -0.1633</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <name>art_S3_L2_n5</name>
+      <uri>model://jam_jar</uri>
+      <pose>1.0002 -1.0558 0.6000 0 0 0.0553</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <name>art_S3_L2_s2</name>
+      <uri>model://cereal_box</uri>
+      <pose>0.3979 -1.5593 0.6000 0 0 0.2408</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <name>art_S3_L3_s2</name>
+      <uri>model://jam_jar</uri>
+      <pose>0.4015 -1.5536 0.9000 0 0 0.0686</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <name>art_S3_L3_s3</name>
+      <uri>model://soup_can</uri>
+      <pose>0.5925 -1.5558 0.9000 0 0 -0.2370</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <name>art_S3_L3_s4</name>
+      <uri>model://cereal_box</uri>
+      <pose>0.7962 -1.5412 0.9000 0 0 0.1277</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <name>art_S4_L1_n1</name>
+      <uri>model://cereal_box</uri>
+      <pose>1.4012 -1.0430 0.3000 0 0 0.0474</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <name>art_S4_L1_n2</name>
+      <uri>model://parcel</uri>
+      <pose>1.5992 -1.0434 0.3000 0 0 0.1937</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <name>art_S4_L1_n5</name>
+      <uri>model://juice_carton</uri>
+      <pose>2.1969 -1.0559 0.3000 0 0 0.0912</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <name>art_S4_L1_s2</name>
+      <uri>model://cereal_box</uri>
+      <pose>1.6088 -1.5522 0.3000 0 0 0.0022</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <name>art_S4_L1_s3</name>
+      <uri>model://parcel</uri>
+      <pose>1.8074 -1.5420 0.3000 0 0 -0.2523</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <name>art_S4_L1_s4</name>
+      <uri>model://soup_can</uri>
+      <pose>2.0062 -1.5487 0.3000 0 0 -0.1910</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <name>art_S4_L2_n1</name>
+      <uri>model://cereal_box</uri>
+      <pose>1.4068 -1.0414 0.6000 0 0 -0.0818</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <name>art_S4_L2_s1</name>
+      <uri>model://jam_jar</uri>
+      <pose>1.3908 -1.5573 0.6000 0 0 -0.1746</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <name>art_S4_L2_s3</name>
+      <uri>model://soup_can</uri>
+      <pose>1.8020 -1.5432 0.6000 0 0 -0.0691</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <name>art_S4_L2_s5</name>
+      <uri>model://parcel</uri>
+      <pose>2.2056 -1.5457 0.6000 0 0 -0.0059</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <name>art_S4_L3_s2</name>
+      <uri>model://juice_carton</uri>
+      <pose>1.5968 -1.5477 0.9000 0 0 0.1476</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <name>art_S4_L3_s5</name>
+      <uri>model://cereal_box</uri>
+      <pose>2.2090 -1.5527 0.9000 0 0 -0.1070</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <name>art_N1_L1_n2</name>
+      <uri>model://soup_can</uri>
+      <pose>-2.0078 1.5409 0.3000 0 0 -0.1070</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <name>art_N1_L1_n4</name>
+      <uri>model://water_bottle</uri>
+      <pose>-1.6077 1.5577 0.3000 0 0 -0.2408</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <name>art_N1_L1_n5</name>
+      <uri>model://parcel</uri>
+      <pose>-1.4016 1.5423 0.3000 0 0 -0.1742</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <name>art_N1_L1_s1</name>
+      <uri>model://jam_jar</uri>
+      <pose>-2.1931 1.0487 0.3000 0 0 0.2433</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <name>art_N1_L2_n3</name>
+      <uri>model://soup_can</uri>
+      <pose>-1.8092 1.5402 0.6000 0 0 0.2527</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <name>art_N1_L2_n4</name>
+      <uri>model://parcel</uri>
+      <pose>-1.6036 1.5478 0.6000 0 0 -0.0531</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <name>art_N1_L2_n5</name>
+      <uri>model://soup_can</uri>
+      <pose>-1.3906 1.5594 0.6000 0 0 -0.2035</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <name>art_N1_L2_s1</name>
+      <uri>model://parcel</uri>
+      <pose>-2.1944 1.0578 0.6000 0 0 0.1925</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <name>art_N1_L2_s4</name>
+      <uri>model://juice_carton</uri>
+      <pose>-1.6039 1.0449 0.6000 0 0 -0.2192</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <name>art_N1_L2_s5</name>
+      <uri>model://water_bottle</uri>
+      <pose>-1.4082 1.0515 0.6000 0 0 -0.0844</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <name>art_N1_L3_n1</name>
+      <uri>model://soup_can</uri>
+      <pose>-2.2092 1.5437 0.9000 0 0 0.1533</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <name>art_N1_L3_n4</name>
+      <uri>model://cereal_box</uri>
+      <pose>-1.5991 1.5516 0.9000 0 0 0.0502</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <name>art_N1_L3_n5</name>
+      <uri>model://cereal_box</uri>
+      <pose>-1.3938 1.5480 0.9000 0 0 -0.1214</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <name>art_N1_L3_s3</name>
+      <uri>model://cereal_box</uri>
+      <pose>-1.8042 1.0558 0.9000 0 0 -0.0035</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <name>art_N1_L3_s5</name>
+      <uri>model://parcel</uri>
+      <pose>-1.3944 1.0466 0.9000 0 0 0.0049</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <name>art_N2_L1_n2</name>
+      <uri>model://juice_carton</uri>
+      <pose>-0.7903 1.5564 0.3000 0 0 -0.0944</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <name>art_N2_L1_n3</name>
+      <uri>model://parcel</uri>
+      <pose>-0.5933 1.5520 0.3000 0 0 -0.1957</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <name>art_N2_L1_n4</name>
+      <uri>model://parcel</uri>
+      <pose>-0.3918 1.5406 0.3000 0 0 -0.0963</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <name>art_N2_L2_n1</name>
+      <uri>model://water_bottle</uri>
+      <pose>-0.9993 1.5410 0.6000 0 0 0.1896</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <name>art_N2_L2_n2</name>
+      <uri>model://cereal_box</uri>
+      <pose>-0.7964 1.5489 0.6000 0 0 -0.0366</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <name>art_N2_L2_n3</name>
+      <uri>model://water_bottle</uri>
+      <pose>-0.5930 1.5491 0.6000 0 0 -0.0546</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <name>art_N2_L2_n5</name>
+      <uri>model://cereal_box</uri>
+      <pose>-0.1941 1.5587 0.6000 0 0 0.2494</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <name>art_N2_L2_s1</name>
+      <uri>model://jam_jar</uri>
+      <pose>-1.0029 1.0428 0.6000 0 0 -0.1963</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <name>art_N2_L2_s2</name>
+      <uri>model://soup_can</uri>
+      <pose>-0.8020 1.0480 0.6000 0 0 0.0589</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <name>art_N2_L2_s3</name>
+      <uri>model://cereal_box</uri>
+      <pose>-0.6064 1.0463 0.6000 0 0 0.2058</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <name>art_N2_L3_n2</name>
+      <uri>model://soup_can</uri>
+      <pose>-0.8001 1.5496 0.9000 0 0 -0.1440</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <name>art_N2_L3_s2</name>
+      <uri>model://jam_jar</uri>
+      <pose>-0.8056 1.0584 0.9000 0 0 0.1378</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <name>art_N3_L1_n2</name>
+      <uri>model://soup_can</uri>
+      <pose>0.4039 1.5570 0.3000 0 0 -0.0672</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <name>art_N3_L1_s5</name>
+      <uri>model://soup_can</uri>
+      <pose>0.9985 1.0588 0.3000 0 0 0.1150</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <name>art_N3_L2_s5</name>
+      <uri>model://soup_can</uri>
+      <pose>1.0026 1.0454 0.6000 0 0 0.2162</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <name>art_N3_L3_n2</name>
+      <uri>model://parcel</uri>
+      <pose>0.4068 1.5532 0.9000 0 0 0.1049</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <name>art_N3_L3_s4</name>
+      <uri>model://soup_can</uri>
+      <pose>0.7988 1.0524 0.9000 0 0 -0.0063</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <name>art_N3_L3_s5</name>
+      <uri>model://water_bottle</uri>
+      <pose>1.0020 1.0482 0.9000 0 0 -0.2000</pose>
+      <static>true</static>
+    </include>
+
+  </world>
+</sdf>

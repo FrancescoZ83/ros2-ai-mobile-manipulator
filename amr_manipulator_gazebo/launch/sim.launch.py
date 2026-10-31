@@ -10,7 +10,7 @@ from launch.actions import (
 )
 from launch.event_handlers import OnProcessExit
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import Command, LaunchConfiguration
+from launch.substitutions import Command, LaunchConfiguration, PathJoinSubstitution, PythonExpression
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 
@@ -20,7 +20,21 @@ def generate_launch_description():
     gz_share = get_package_share_directory('amr_manipulator_gazebo')
     ros_gz_sim_share = get_package_share_directory('ros_gz_sim')
 
-    world_file = os.path.join(gz_share, 'worlds', 'empty_world.sdf')
+    # World file name (inside amr_manipulator_gazebo/worlds) and spawn pose of the robot,
+    # all chosen from the command line:
+    #   ros2 launch amr_manipulator_gazebo sim.launch.py world:=warehouse.sdf x:=-4.0 yaw:=1.57
+    world_arg = DeclareLaunchArgument(
+        'world',
+        default_value='empty_world.sdf',
+        description='World file in amr_manipulator_gazebo/worlds')
+    x_arg = DeclareLaunchArgument('x', default_value='0.0', description='Spawn x [m]')
+    y_arg = DeclareLaunchArgument('y', default_value='0.0', description='Spawn y [m]')
+    yaw_arg = DeclareLaunchArgument('yaw', default_value='0.0', description='Spawn yaw [rad]')
+    gui_arg = DeclareLaunchArgument(
+        'gui', default_value='true',
+        description="'false' runs the Gazebo server only (no GUI), which saves a lot of CPU")
+
+    world_file = PathJoinSubstitution([gz_share, 'worlds', LaunchConfiguration('world')])
     xacro_file = os.path.join(desc_share, 'urdf', 'amr_manipulator.urdf.xacro')
 
     # 1. Resource path: parent dir of the package share dir lets Gazebo resolve
@@ -36,10 +50,15 @@ def generate_launch_description():
         'IGN_GAZEBO_RESOURCE_PATH', os.pathsep.join(resource_paths))
 
     # 2. Gazebo server + GUI. -r starts the simulation running, -v 3 sets log verbosity.
+    #    gz_args is a list of substitutions because the world file name is a launch argument.
+    #    Without the GUI the server runs alone (-s) and the sensors render headless.
+    gz_flags = PythonExpression([
+        "'-r -v 3 ' if '", LaunchConfiguration('gui'),
+        "' == 'true' else '-r -s --headless-rendering -v 3 '"])
     gazebo = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(ros_gz_sim_share, 'launch', 'gz_sim.launch.py')),
-        launch_arguments={'gz_args': f'-r -v 3 {world_file}'}.items(),
+        launch_arguments={'gz_args': [gz_flags, world_file]}.items(),
     )
 
     # 3. robot_state_publisher: runs xacro at launch time and publishes
@@ -71,7 +90,9 @@ def generate_launch_description():
     spawn = Node(
         package='ros_gz_sim',
         executable='create',
-        arguments=['-topic', 'robot_description', '-name', 'amr_manipulator', '-z', '0.05'],
+        arguments=['-topic', 'robot_description', '-name', 'amr_manipulator',
+                   '-x', LaunchConfiguration('x'), '-y', LaunchConfiguration('y'),
+                   '-z', '0.05', '-Y', LaunchConfiguration('yaw')],
         output='screen',
     )
 
@@ -131,6 +152,11 @@ def generate_launch_description():
     )
 
     return LaunchDescription([
+        world_arg,
+        x_arg,
+        y_arg,
+        yaw_arg,
+        gui_arg,
         payload_arg,
         set_resource_path,
         gazebo,

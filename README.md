@@ -153,10 +153,60 @@ Known limits:
 - `camera_info` counts the image corner as the pixel origin (principal point 160, 120): pixel
   indices need a +0.5 shift in projection code.
 
+## Step 5: warehouse world
+
+A small order-picking warehouse, 12 x 8 m, generated from a single description (`config/warehouse_layout.yaml`). The same description also produces the semantic map, so the world and what the robot knows about it cannot drift apart.
+
+- **Building.** Three zones (receiving, storage, packing) separated by two partitions with four 1.2 m doors.
+- **Furniture.** Seven shelf units (two rows, three levels at 0.30 / 0.60 / 0.90 m, accessible from both sides), two work benches, two bins on the packing bench, two columns. Level 1 is the top of a solid plinth, so the LiDAR plane (z = 0.275 m) sees every shelf as a solid rectangle.
+- **Articles.** Six classes (`cereal_box`, `juice_carton`, `soup_can`, `water_bottle`, `parcel`, `jam_jar`), all primitives with generated textures. **No markers**: a neural network will have to recognise them. Sizes respect the gripper (85 mm) and the level spacing.
+- **Stock.** 210 slots (5 per face and level). Each slot is filled with probability 0.30 (seed 1): 69 articles, 28 of them on the faces the robot works from (`pickable`). Articles are static by default; a dynamic copy is only needed when one is picked.
+- **Semantic map** (`config/semantic_map.yaml`): zones, doors with the zones they connect, shelves, benches, bins and every slot with its pose and article.
+
+```bash
+python3 scripts/make_articles.py --spec amr_manipulator_gazebo/config/articles.yaml \
+  --out amr_manipulator_gazebo/models
+python3 scripts/generate_world.py \
+  --layout amr_manipulator_gazebo/config/warehouse_layout.yaml \
+  --template amr_manipulator_gazebo/worlds/empty_world.sdf \
+  --articles amr_manipulator_gazebo/config/articles.yaml --static-articles \
+  --semantic-out amr_manipulator_gazebo/config/semantic_map.yaml \
+  --out amr_manipulator_gazebo/worlds/warehouse.sdf
+colcon build --symlink-install --packages-select amr_manipulator_gazebo
+ros2 launch amr_manipulator_gazebo sim.launch.py world:=warehouse.sdf [gui:=false] [x:= y:= yaw:=]
+python3 scripts/world_check.py --map amr_manipulator_gazebo/config/semantic_map.yaml
+```
+
+### Results
+
+| Check | Result |
+|---|---|
+| Scan from the origin, front / left / right | 4.105 / 0.887 / 0.880 m (expected 4.110 / 0.900 / 0.900; the closest of about 20 noisy rays is 1-2 cm short) |
+| Scan from the south aisle (`yaw:=1.5708`) | 0.942 / 2.942 / 1.597 m (expected 0.960 / 2.937 / 1.608) |
+| Drive through door P3, 0.3 m/s | 4.673 m (planned 4.68), lateral -1 mm, yaw -0.010 deg |
+| Articles at rest in their slots | 28 of 28 within 0.1 mm of the pose in the map |
+| Textures | rendered in the Gazebo GUI and in the RGB-D camera |
+
+Real time factor (CPU rendering, 30 s average):
+
+| Scene | GUI | no GUI |
+|---|---|---|
+| Building and furniture only | 0.83 | - |
+| 28 dynamic articles | 0.40 | 0.62 |
+| All articles static | 0.73 | **0.98** |
+
+The cost is physics, not rendering: shadows made no difference (0.38 without them). Articles are therefore static in the normal world.
+
+### Known limits (step 5)
+
+- Rendering is on the CPU (llvmpipe); the GPU is left to the neural network.
+- Articles are static: a dynamic copy still has to be swapped in when the robot picks one.
+- Textures are applied per face (stretched on boxes, a partial crop on the caps of cylinders).
+- Shelf levels 1 and 2 leave 0.27 m of free height: a top-down grasp is tight there, level 3 is open above.
+- The arm starts at the same pose as `home90`: the gripper is 0.64 m in front of `base_footprint` at 0.63 m, i.e. beyond the base. Driving into a bench at 0.3 m/s ended with the gripper hitting the bench top. The Nav2 footprint and a travel pose are needed before navigation.
+
 ## Roadmap
 
-1. **Step 4:** LiDAR and RGB-D camera in Gazebo, bridged to ROS.
-2. **Step 5:** grasp scenes and a richer world.
 3. **Step 6:** SLAM (slam_toolbox) and navigation (Nav2).
 4. **Step 7:** MoveIt 2 with a `FollowJointTrajectory` interface on top of the arm controller.
 5. **Step 8:** object perception (PyTorch / ONNX).
