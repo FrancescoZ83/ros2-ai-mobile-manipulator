@@ -14,7 +14,7 @@ The project is a learning exercise: every file is written by hand, and each step
 | 3 | Effort control of the arm and the gripper, adaptive payload, driving checks | done |
 | 4 | Sensors in Gazebo (LiDAR, RGB-D) | done |
 | 5 | Warehouse world and semantic map | done |
-| 6 | slam_toolbox + Nav2 | in progress: travel pose, mapping and map check done; AMCL + Nav2 next |
+| 6 | slam_toolbox + Nav2 | in progress: travel pose, mapping, map check and navigation through the doors done; goals from the semantic map next |
 | 7 | MoveIt 2 (inverse kinematics, planning, collisions) | planned |
 | 8 | Perception (PyTorch / ONNX) | planned |
 | 9 | Task logic with BehaviorTree.CPP | planned |
@@ -54,6 +54,11 @@ ros2 launch amr_manipulator_gazebo sim.launch.py world:=warehouse.sdf gui:=false
 ros2 launch amr_manipulator_gazebo slam.launch.py
 ros2 run teleop_twist_keyboard teleop_twist_keyboard
 ros2 run nav2_map_server map_saver_cli -f amr_manipulator_gazebo/maps/warehouse
+
+# Navigation with the saved map (stop SLAM first: both would publish map -> odom)
+ros2 launch amr_manipulator_gazebo nav.launch.py
+python3 scripts/nav_goto.py --goal 2.0 0.0 0.0           # x y yaw in the map frame
+python3 scripts/nav_goto.py --suite doors --repeat 3     # through the four doors, 3 times
 ```
 
 Stop a simulation with Ctrl+C and check that no `ign gazebo` process is left: a second Gazebo server makes the controller spawners fail with "Controller already loaded".
@@ -76,6 +81,8 @@ python3 scripts/robot_geometry.py
 python3 scripts/scan_mask.py
 # Compare the saved map with the boxes of the SDF world (no ROS needed)
 python3 scripts/map_check.py [--tol-m 0.10]
+# Turn in place in 90 degree steps: odometry yaw against Gazebo's ground truth (Nav2 stopped)
+python3 scripts/turn_test.py [--rate -0.5]
 ```
 
 Note: new files need `colcon build` even with `--symlink-install`; the controller YAML is read only at startup.
@@ -223,7 +230,7 @@ The cost is physics, not rendering: shadows made no difference (0.38 without the
 
 ## Step 6: SLAM and navigation (in progress)
 
-Done: footprint and travel pose, LiDAR self-echo, mapping with slam_toolbox, numerical map check. Still to do: AMCL + Nav2 (6.5) and goals taken from the semantic map (6.6).
+Done: footprint and travel pose, LiDAR self-echo, mapping with slam_toolbox, numerical map check, localization (AMCL) and navigation (Nav2) through the four doors. Still to do: goals taken from the semantic map (6.6).
 
 ### Footprint and travel pose
 
@@ -247,7 +254,7 @@ The base of the UR5e crosses the LiDAR plane about 0.19 m behind the sensor. `sc
 - **28 rays** in two symmetric sectors, -171.0 .. -157.9 and +157.9 .. +171.0 degrees, at 0.120 .. 0.153 m. Nothing else is closer than 0.5 m.
 - Between the two sectors (about +-9 degrees around 180) the sensor looks past the base: the closest return there is 4.774 m, the receiving bench seen through the west door (4.79 m expected). Probable cause: the base surface is closer than the 0.12 m minimum range and is not rendered; this was not checked in the simulator.
 
-So there is no angular mask: a minimum range of **0.2 m** removes every self-echo (4.7 cm above the farthest one, against a noise of 1 cm) and keeps the valid rays of the window. It is `min_laser_range` in slam_toolbox, and will be `obstacle_min_range` / `raytrace_min_range` in the Nav2 costmaps.
+So there is no angular mask: a minimum range of **0.2 m** removes every self-echo (4.7 cm above the farthest one, against a noise of 1 cm) and keeps the valid rays of the window. It is `min_laser_range` in slam_toolbox and AMCL, and `obstacle_min_range` / `raytrace_min_range` in the Nav2 costmaps.
 
 ### Mapping
 
@@ -268,17 +275,63 @@ So there is no angular mask: a minimum range of **0.2 m** removes every self-ech
 
 The tolerance of 0.10 m (two cells) was chosen after seeing these numbers: the first proposal, 0.05 m, would fail (68.9 %). The error is a band of 2 cells around each face with no systematic offset, and nothing is more than 9.5 cm away, so there is no double wall. Whether the band is normal blur of the occupied cells or a small registration error is not separated by this check.
 
+### Navigation (AMCL + Nav2)
+
+`launch/nav.launch.py` starts Nav2's own bringup (map server, AMCL, planner, controller, behaviors, BT navigator, velocity smoother) with `config/nav2_params.yaml`: the file installed with Nav2, every difference marked `CHANGED`. The simulation is a separate launch. AMCL takes its initial pose (0, 0, 0) from the parameters, because the robot always starts at the world origin.
+
+Main choices:
+
+- **Frames and footprint.** `base_footprint` everywhere (the example uses `base_link`); the 8-vertex polygon of the platform instead of `robot_radius`.
+- **Self-echo.** Minimum range 0.2 m in AMCL (`laser_min_range`) and in both costmaps; without it AMCL would use the 28 rays that hit the arm base.
+- **Local controller: DWB**, up to 0.4 m/s and 1 rad/s, with the `ObstacleFootprint` critic (the whole polygon on the costmap, not only the robot centre). Goal tolerance 0.10 m and 0.10 rad. Reversing is allowed at the same 0.4 m/s (`min_vel_x`, and the same limit in the velocity smoother).
+- **Local costmap** with an obstacle layer instead of the voxel layer: the data is a 2D scan.
+
+`scripts/nav_goto.py --suite doors` sends six goals, through each of the four doors (P1 and P2 into and out of the receiving zone, P3 on the way from receiving to packing, P4 from packing to the north aisle), and compares the final pose with Gazebo's ground truth. Three runs in a row, 18 goals, reversing allowed:
+
+| Goal | mean / max time [s] (simulation) | recoveries | reached |
+|---|---|---|---|
+| P1 into receiving | 25.9 / 30.9 (see below) | 0 | 3/3 |
+| receiving south | 15.2 / 15.8 | 0 | 3/3 |
+| P2 into south aisle | 16.2 / 16.4 | 0 | 3/3 |
+| P2 out to receiving | 18.6 / 19.7 | 0 | 3/3 |
+| receiving to packing (P1, P3) | 28.2 / 29.6 | 1 | 3/3 |
+| P4 into north aisle | 21.5 / 22.6 | 0 | 3/3 |
+
+| Over the 18 goals | mean / max / std |
+|---|---|
+| Final position error against ground truth [m] | 0.085 / 0.169 / 0.032 |
+| Final yaw error [deg] | 2.1 / 8.4 / 1.8 |
+| Nav2's own pose estimate against ground truth [m] | 0.059 / 0.138 / 0.038 |
+
+The first goal of the first run starts at the origin (4.2 m path, 17.6 s); in the next two runs it starts from the north aisle where the previous run ended (about 10 m, 29-31 s): that is the spread of its row, not noise.
+
+**Reversing.** In the first attempt, without reversing, the run reached 6 goals of 6 but two of them stalled for more than 30 s: "P2 out to receiving" took 66.2 s with 5 recoveries and "P4 into north aisle" 70.1 s with 4. With reversing at 0.2 m/s the same two took 32.6 s and 32.3 s with no recovery, and at 0.4 m/s about 19 s and 22 s (table above). These were single runs; the cause of the original stalls was not isolated. Both goals need the robot to turn around, and the station at (3.8, 0) is too tight for that: the smallest distance between the footprint and an obstacle during a full turn is 0.179 m, against 0.315 m of inscribed radius (the south aisle goal has 0.529 m). Open places such as (4.2, 2.0) have 0.654 m.
+
+**Odometry while turning.** `scripts/turn_test.py` turns in place in four 90 degree steps and compares the odometry yaw with the ground truth:
+
+| Speed | Odometry / truth, counter-clockwise | clockwise |
+|---|---|---|
+| 0.5 rad/s | 0.936 | 0.934 |
+| 1.0 rad/s | 0.997 | 0.993 |
+
+The odometry always reports about 89.4 degrees for a 90 degree step; the body turns 95.6 degrees at 0.5 rad/s and about 90 at 1 rad/s. The centre of the robot moves less than 9 mm, so there is no lateral slip. The error depends on the speed, not on the direction, so one `wheel_separation` cannot fix it (it would be 0.545 m at 0.5 rad/s and 0.578 m at 1 rad/s, against 0.58). The probable cause is the contact of the 0.05 m wide wheel cylinders, but it was not checked and the model was not changed: changing the wheel collision would also change the footprint measured in step 6 and the results of steps 3 and 5. AMCL absorbs the error while the robot drives.
+
 ### Known limits (step 6, so far)
 
 - In the RViz view the robot ended the mapping run away from the start point, so loop closure was probably not exercised; the map check shows no error above 9.5 cm anyway.
-- The inside of shelves, benches and columns is unknown in the map (the LiDAR sees only the faces).
+- The inside of shelves, benches and columns is unknown in the map (the LiDAR sees only the faces). In the Nav2 costmap that interior looks free: the map is saved in trinary mode with free threshold 0.25, and Nav2 seems to load unknown pixels as free. It is harmless because those cells are enclosed by occupied ones.
 - The travel pose leaves 19 mm at the rear: a joint error (stiction at rest up to about 3 mrad on elbow, wrist1 and wrist2, about 0.5-1 degree on wrist3) uses part of it.
 - Nav2 does not yet refuse to start if the arm is not in the travel pose.
-- Obstacles closer than 0.2 m to the LiDAR are ignored by SLAM and (later) by the costmaps; the sensor sits 6 cm behind the front edge of the platform.
+- Obstacles closer than 0.2 m to the LiDAR are ignored by SLAM, AMCL and the costmaps; the sensor sits 6 cm behind the front edge of the platform.
+- The final pose is limited by the localization, not by the controller: 4 of the 18 goals ended more than 0.10 m from the goal in Gazebo's ground truth (the goal checker tolerance), because Nav2's own estimate was off by up to 0.14 m. The estimate is worst around the south-west of the receiving zone (0.10-0.14 m at the "receiving south" goal).
+- Collisions are not measured automatically: no goal failed and there was one recovery in 18 goals, but that is not a collision test.
+- Behind the robot the LiDAR cannot see in a cone covered by the arm base (except a window of about 9 degrees on each side of the axis), so reversing relies on the map and on what the costmap already holds. The world is static.
+- Nav2 and slam_toolbox must not run together.
+- The pick stations at (+-3.8, 0) are too tight to turn in place (see above); open places will be needed for step 7.
 
 ## Roadmap
 
-- **Step 6:** AMCL + Nav2 (6.5), goals from the semantic map (6.6).
+- **Step 6:** goals from the semantic map (6.6).
 - **Step 7:** MoveIt 2 with a `FollowJointTrajectory` interface on top of the arm controller.
 - **Step 8:** object perception (PyTorch / ONNX).
 - **Step 9:** task logic with BehaviorTree.CPP.
