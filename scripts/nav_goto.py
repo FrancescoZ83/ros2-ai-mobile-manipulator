@@ -81,6 +81,9 @@ def run_goal(nav, buf, name, x, y, yaw, timeout):
     return {
         'name': name, 'result': result, 'time': nav_time, 'length': length, 'recoveries': recoveries,
         'err_xy': math.hypot(gx - x, gy - y), 'err_yaw': math.degrees(abs(wrap(gyaw - yaw))),
+        # Error in the frame of the goal: along its heading, and across it (positive = to its left)
+        'along': (gx - x) * math.cos(yaw) + (gy - y) * math.sin(yaw),
+        'across': -(gx - x) * math.sin(yaw) + (gy - y) * math.cos(yaw),
         'loc_xy': None if est is None else math.hypot(gx - est[0], gy - est[1]),
     }
 
@@ -91,6 +94,49 @@ def stat(values):
         return '-'
     std = statistics.pstdev(values) if len(values) > 1 else 0.0
     return f'{statistics.mean(values):.3f} / {max(values):.3f} / {std:.3f}'
+
+
+def run_goals(goals, timeout, repeat=1):
+    """Send the goals (name, x, y, yaw) in order, `repeat` times; print the report; True if all were reached."""
+    rclpy.init()
+    nav = BasicNavigator()
+    nav.set_parameters([Parameter('use_sim_time', Parameter.Type.BOOL, True)])
+    buf = Buffer()
+    TransformListener(buf, nav)       # AMCL sets the initial pose from the parameters: nothing to publish here
+
+    rows = []
+    for name, x, y, yaw in goals * repeat:
+        print(f'-> {name}: ({x:+.2f}, {y:+.2f}, {math.degrees(yaw):+.0f} deg)', flush=True)
+        row = run_goal(nav, buf, name, x, y, yaw, timeout)
+        rows.append(row)
+        print(f"   {row['result'].name}: {row['time']:.1f} s of simulation, path {row['length']:.2f} m, "
+              f"{row['recoveries']} recoveries, error {row['err_xy']:.3f} m / {row['err_yaw']:.1f} deg", flush=True)
+
+    ok = [r for r in rows if r['result'] == TaskResult.SUCCEEDED]
+    print('\ngoal                           result     time[s]  path[m]  rec  err[m]  along[m] across[m]  yaw[deg]  loc[m]')
+    for r in rows:
+        loc = '-' if r['loc_xy'] is None else f"{r['loc_xy']:.3f}"
+        print(f"{r['name']:30s} {r['result'].name:10s} {r['time']:7.1f} {r['length']:8.2f} {r['recoveries']:4d} "
+              f"{r['err_xy']:7.3f} {r['along']:+9.3f} {r['across']:+9.3f} {r['err_yaw']:9.1f} {loc:>7s}")
+    if repeat > 1:
+        print(f'\nper goal over {repeat} runs:   mean time[s]  max time[s]  recoveries  reached')
+        for name, *_ in goals:
+            mine = [r for r in rows if r['name'] == name]
+            times = [r['time'] for r in mine]
+            reached = sum(r['result'] == TaskResult.SUCCEEDED for r in mine)
+            print(f'{name:30s} {statistics.mean(times):12.1f} {max(times):12.1f} '
+                  f"{sum(r['recoveries'] for r in mine):11d} {reached:4d}/{len(mine)}")
+    print(f'\nreached {len(ok)} of {len(rows)}')
+    print('final position error vs ground truth [m], mean / max / std :', stat([r['err_xy'] for r in ok]))
+    print('  along the goal heading [m], mean (signed) / max |.| / std  :', f"{statistics.mean(r['along'] for r in ok):+.3f} / "
+          f"{max(abs(r['along']) for r in ok):.3f} / {statistics.pstdev(r['along'] for r in ok):.3f}" if ok else '-')
+    print('  across it, positive to the left [m], same                  :', f"{statistics.mean(r['across'] for r in ok):+.3f} / "
+          f"{max(abs(r['across']) for r in ok):.3f} / {statistics.pstdev(r['across'] for r in ok):.3f}" if ok else '-')
+    print('final yaw error vs ground truth [deg], mean / max / std    :', stat([r['err_yaw'] for r in ok]))
+    print('Nav2 estimate vs ground truth [m], mean / max / std        :', stat([r['loc_xy'] for r in rows if r['loc_xy'] is not None]))
+    nav.destroy_node()
+    rclpy.shutdown()
+    return len(ok) == len(rows)
 
 
 def main():
@@ -105,42 +151,7 @@ def main():
     if args.repeat < 1:
         ap.error('--repeat must be at least 1')
     goals = SUITES[args.suite] if args.suite else [('goal', *args.goal)]
-
-    rclpy.init()
-    nav = BasicNavigator()
-    nav.set_parameters([Parameter('use_sim_time', Parameter.Type.BOOL, True)])
-    buf = Buffer()
-    TransformListener(buf, nav)       # AMCL sets the initial pose from the parameters: nothing to publish here
-
-    rows = []
-    for name, x, y, yaw in goals * args.repeat:
-        print(f'-> {name}: ({x:+.2f}, {y:+.2f}, {math.degrees(yaw):+.0f} deg)', flush=True)
-        row = run_goal(nav, buf, name, x, y, yaw, args.timeout)
-        rows.append(row)
-        print(f"   {row['result'].name}: {row['time']:.1f} s of simulation, path {row['length']:.2f} m, "
-              f"{row['recoveries']} recoveries, error {row['err_xy']:.3f} m / {row['err_yaw']:.1f} deg", flush=True)
-
-    ok = [r for r in rows if r['result'] == TaskResult.SUCCEEDED]
-    print('\ngoal                           result     time[s]  path[m]  rec  err[m]  yaw[deg]  loc[m]')
-    for r in rows:
-        loc = '-' if r['loc_xy'] is None else f"{r['loc_xy']:.3f}"
-        print(f"{r['name']:30s} {r['result'].name:10s} {r['time']:7.1f} {r['length']:8.2f} {r['recoveries']:4d} "
-              f"{r['err_xy']:7.3f} {r['err_yaw']:9.1f} {loc:>7s}")
-    if args.repeat > 1:
-        print(f'\nper goal over {args.repeat} runs:   mean time[s]  max time[s]  recoveries  reached')
-        for name, *_ in goals:
-            mine = [r for r in rows if r['name'] == name]
-            times = [r['time'] for r in mine]
-            reached = sum(r['result'] == TaskResult.SUCCEEDED for r in mine)
-            print(f'{name:30s} {statistics.mean(times):12.1f} {max(times):12.1f} '
-                  f"{sum(r['recoveries'] for r in mine):11d} {reached:4d}/{len(mine)}")
-    print(f'\nreached {len(ok)} of {len(rows)}')
-    print('final position error vs ground truth [m], mean / max / std :', stat([r['err_xy'] for r in ok]))
-    print('final yaw error vs ground truth [deg], mean / max / std    :', stat([r['err_yaw'] for r in ok]))
-    print('Nav2 estimate vs ground truth [m], mean / max / std        :', stat([r['loc_xy'] for r in rows if r['loc_xy'] is not None]))
-    nav.destroy_node()
-    rclpy.shutdown()
-    sys.exit(0 if len(ok) == len(rows) else 1)
+    sys.exit(0 if run_goals(goals, args.timeout, args.repeat) else 1)
 
 
 if __name__ == '__main__':

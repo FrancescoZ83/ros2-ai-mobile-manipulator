@@ -14,7 +14,7 @@ The project is a learning exercise: every file is written by hand, and each step
 | 3 | Effort control of the arm and the gripper, adaptive payload, driving checks | done |
 | 4 | Sensors in Gazebo (LiDAR, RGB-D) | done |
 | 5 | Warehouse world and semantic map | done |
-| 6 | slam_toolbox + Nav2 | in progress: travel pose, mapping, map check and navigation through the doors done; goals from the semantic map next |
+| 6 | slam_toolbox + Nav2 | done: travel pose, mapping, map check, navigation through the doors, goals taken from the semantic map |
 | 7 | MoveIt 2 (inverse kinematics, planning, collisions) | planned |
 | 8 | Perception (PyTorch / ONNX) | planned |
 | 9 | Task logic with BehaviorTree.CPP | planned |
@@ -59,6 +59,9 @@ ros2 run nav2_map_server map_saver_cli -f amr_manipulator_gazebo/maps/warehouse
 ros2 launch amr_manipulator_gazebo nav.launch.py
 python3 scripts/nav_goto.py --goal 2.0 0.0 0.0           # x y yaw in the map frame
 python3 scripts/nav_goto.py --suite doors --repeat 3     # through the four doors, 3 times
+# Places by name, from the semantic map (shelf units, benches, bins, doors, zones)
+python3 scripts/nav_semantic.py S3
+python3 scripts/nav_semantic.py --tour all --repeat 3
 ```
 
 Stop a simulation with Ctrl+C and check that no `ign gazebo` process is left: a second Gazebo server makes the controller spawners fail with "Controller already loaded".
@@ -83,6 +86,8 @@ python3 scripts/scan_mask.py
 python3 scripts/map_check.py [--tol-m 0.10]
 # Turn in place in 90 degree steps: odometry yaw against Gazebo's ground truth (Nav2 stopped)
 python3 scripts/turn_test.py [--rate -0.5]
+# Pose and clearance of every place of the semantic map (no ROS needed)
+python3 scripts/semantic_goals.py [S3 packing_table] [--gap 0.25] [--facing]
 ```
 
 Note: new files need `colcon build` even with `--symlink-install`; the controller YAML is read only at startup.
@@ -228,9 +233,9 @@ The cost is physics, not rendering: shadows made no difference (0.38 without the
 - Shelf levels 1 and 2 leave 0.27 m of free height: a top-down grasp is tight there, level 3 is open above.
 - The arm starts at the same pose as `home90`: the gripper is 0.64 m in front of `base_footprint` at 0.63 m, i.e. beyond the base. Driving into a bench at 0.3 m/s ended with the gripper hitting the bench top. The Nav2 footprint and a travel pose are needed before navigation (travel pose: see step 6).
 
-## Step 6: SLAM and navigation (in progress)
+## Step 6: SLAM and navigation
 
-Done: footprint and travel pose, LiDAR self-echo, mapping with slam_toolbox, numerical map check, localization (AMCL) and navigation (Nav2) through the four doors. Still to do: goals taken from the semantic map (6.6).
+Footprint and travel pose, LiDAR self-echo, mapping with slam_toolbox, numerical map check, localization (AMCL), navigation (Nav2) through the four doors, and goals taken from the semantic map.
 
 ### Footprint and travel pose
 
@@ -316,6 +321,39 @@ The first goal of the first run starts at the origin (4.2 m path, 17.6 s); in th
 
 The odometry always reports about 89.4 degrees for a 90 degree step; the body turns 95.6 degrees at 0.5 rad/s and about 90 at 1 rad/s. The centre of the robot moves less than 9 mm, so there is no lateral slip. The error depends on the speed, not on the direction, so one `wheel_separation` cannot fix it (it would be 0.545 m at 0.5 rad/s and 0.578 m at 1 rad/s, against 0.58). The probable cause is the contact of the 0.05 m wide wheel cylinders, but it was not checked and the model was not changed: changing the wheel collision would also change the footprint measured in step 6 and the results of steps 3 and 5. AMCL absorbs the error while the robot drives.
 
+### Goals from the semantic map
+
+`scripts/semantic_goals.py` turns a name of `config/semantic_map.yaml` into a pose, and `scripts/nav_semantic.py` drives there with Nav2 (`nav_goto.py` does the driving and the report).
+
+| Name | Pose |
+|---|---|
+| `S1`..`S4`, `N1`..`N3` | in the aisle beside the shelf unit, bow along the aisle (yaw 0), 0.25 m between the platform and the pick face (south row: north face; north row: south face; the face is the one whose slots are `pickable`) |
+| `receiving_table`, `packing_table`, `bin_1`, `bin_2` | on the side of the bench that faces the storage zone, bow towards the bench, 0.25 m from the bench top: (-3.75, 0) and (3.75, 0). A bin uses the station of its bench |
+| `P1`..`P4` | on the door line, yaw 0 |
+| `receiving`, `storage`, `packing` | the point of the zone farthest from any obstacle at the LiDAR height: (-4.5, -2.5), (1.7, 2.8), (4.5, 2.5) |
+
+The shelf stations stand beside the shelf, not in front of it, because a turn on the spot there is not possible with any margin. Smallest distance between the platform polygon and an obstacle, computed on the SDF:
+
+| Station | At the pose | During a full turn on the spot |
+|---|---|---|
+| Shelf, bow along the aisle (gap 0.25) | 0.250 m | 0.094 m |
+| Shelf, bow towards the shelf (`--facing`, gap 0.30) | 0.300 m | 0.229 m |
+| Bench | 0.300 m | 0.229 m |
+| Zone points | 0.84 .. 1.03 m | 0.73 .. 0.96 m |
+
+With the bow along the aisle neighbouring units need no turn: the robot drives along the aisle and the arm turns with its first joint. To stop with yaw 0 when it comes from the other side, the robot reverses; the gap of 0.25 m and this orientation are **provisional**, they depend on the reach of the arm (step 7).
+
+`nav_semantic.py --tour all --repeat 3` visits the seven shelf units, the two benches and the three zones, three times: 36 goals, all reached, 3 recoveries in total (S1 twice, `packing_table` once). Final pose against Gazebo's ground truth:
+
+| Places | goals | position error [m] mean / max / std | yaw [deg] mean / max | Nav2's own estimate [m] mean / max | above 0.10 m |
+|---|---|---|---|---|---|
+| Shelf units | 21 | 0.079 / 0.163 / 0.038 | 3.2 / 6.3 | 0.062 / 0.123 | 7 of 21 |
+| Benches | 6 | 0.063 / 0.094 / 0.029 | 2.6 / 8.4 | 0.030 / 0.075 | 0 of 6 |
+| Zone points | 9 | 0.138 / 0.194 / 0.036 | 4.1 / 6.4 | 0.124 / 0.174 | 7 of 9 |
+| All | 36 | 0.091 / 0.194 / 0.046 | 3.3 / 8.4 | 0.072 / 0.174 | 14 of 36 |
+
+Moving between neighbouring shelf units takes 5-10 s (path about 1.2-1.5 m); the long runs are 11-13 m to the zone points (32-37 s). The error follows the quality of Nav2's own estimate: it is best at the benches (0.03 m) and worst at the zone points (0.12 m), which are by construction the points farthest from any obstacle. Path length alone does not explain it: `receiving` and `packing` come after 11-13 m, but `storage` after only 3 m and still has the largest errors (0.125, 0.155, 0.194 m). The common factor is probably the little geometry near those points; this was not tested.
+
 ### Known limits (step 6, so far)
 
 - In the RViz view the robot ended the mapping run away from the start point, so loop closure was probably not exercised; the map check shows no error above 9.5 cm anyway.
@@ -328,10 +366,12 @@ The odometry always reports about 89.4 degrees for a 90 degree step; the body tu
 - Behind the robot the LiDAR cannot see in a cone covered by the arm base (except a window of about 9 degrees on each side of the axis), so reversing relies on the map and on what the costmap already holds. The world is static.
 - Nav2 and slam_toolbox must not run together.
 - The pick stations at (+-3.8, 0) are too tight to turn in place (see above); open places will be needed for step 7.
+- At the shelf stations 7 of 21 arrivals ended more than 0.10 m from the goal in the ground truth (mean 0.079 m). The test did not split the error along and across the aisle; across it means towards or away from the shelf, which matters for the 0.25 m gap. `nav_goto.py` now prints both.
+- Crossing the aisle at constant heading (N1 to S1, 1.15 m) took 13.3 s and one recovery; it was done once.
+- The stations of the shelves and benches are provisional: the gap and the orientation depend on the reach of the arm.
 
 ## Roadmap
 
-- **Step 6:** goals from the semantic map (6.6).
 - **Step 7:** MoveIt 2 with a `FollowJointTrajectory` interface on top of the arm controller.
 - **Step 8:** object perception (PyTorch / ONNX).
 - **Step 9:** task logic with BehaviorTree.CPP.
