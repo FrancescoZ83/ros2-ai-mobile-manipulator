@@ -4,10 +4,13 @@ from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
+    ExecuteProcess,
     IncludeLaunchDescription,
+    LogInfo,
     RegisterEventHandler,
     SetEnvironmentVariable,
 )
+from launch.conditions import IfCondition
 from launch.event_handlers import OnProcessExit
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import Command, LaunchConfiguration, PathJoinSubstitution, PythonExpression
@@ -151,6 +154,28 @@ def generate_launch_description():
         )
     )
 
+    # 9. Stow: once every controller is active, fold the arm into the travel pose
+    #    (with the arm folded, the whole-robot footprint equals the platform footprint).
+    #    scripts/arm_goto.py waits for the start-up ramp to finish, sends the goal and
+    #    prints the tracking error, so the log of the launch is the success test.
+    #    The script is found relative to this file: this needs `colcon build --symlink-install`.
+    stow_arg = DeclareLaunchArgument(
+        'stow', default_value='true',
+        description="'false' leaves the arm in the start-up pose (home90) for manipulation tests")
+    arm_goto = os.path.normpath(os.path.join(
+        os.path.dirname(os.path.realpath(__file__)), '..', '..', 'scripts', 'arm_goto.py'))
+    travel_pose = ['3.1416', '-1.5708', '1.5708', '-1.5708', '-1.5708', '1.5708']
+    if os.path.isfile(arm_goto):
+        stow = ExecuteProcess(
+            cmd=['python3', '-u', arm_goto, '--goal', *travel_pose, '--time', '6'],
+            condition=IfCondition(LaunchConfiguration('stow')),
+            output='screen',
+        )
+    else:
+        stow = LogInfo(msg=f'stow skipped: {arm_goto} not found (build with --symlink-install)')
+    stow_after_gripper = RegisterEventHandler(
+        OnProcessExit(target_action=gripper_controller_spawner, on_exit=[stow]))
+
     return LaunchDescription([
         world_arg,
         x_arg,
@@ -158,6 +183,7 @@ def generate_launch_description():
         yaw_arg,
         gui_arg,
         payload_arg,
+        stow_arg,
         set_resource_path,
         gazebo,
         robot_state_publisher,
@@ -166,4 +192,5 @@ def generate_launch_description():
         start_jsb_after_spawn,
         start_arm_after_jsb,
         start_gripper_after_arm,
+        stow_after_gripper,
     ])

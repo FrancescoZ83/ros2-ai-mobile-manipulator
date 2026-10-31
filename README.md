@@ -12,9 +12,9 @@ The project is a learning exercise: every file is written by hand, and each step
 | 1 | Robot description (xacro): base, UR5e, gripper | done |
 | 2 | Simulation in Gazebo: world, differential drive, ros2_control, bridge | done |
 | 3 | Effort control of the arm and the gripper, adaptive payload, driving checks | done |
-| 4 | Sensors in Gazebo (LiDAR, RGB-D) | next |
-| 5 | Grasp scenarios and world | planned |
-| 6 | Nav2 + slam_toolbox | planned |
+| 4 | Sensors in Gazebo (LiDAR, RGB-D) | done |
+| 5 | Warehouse world and semantic map | done |
+| 6 | slam_toolbox + Nav2 | in progress: travel pose, mapping and map check done; AMCL + Nav2 next |
 | 7 | MoveIt 2 (inverse kinematics, planning, collisions) | planned |
 | 8 | Perception (PyTorch / ONNX) | planned |
 | 9 | Task logic with BehaviorTree.CPP | planned |
@@ -30,7 +30,7 @@ The project is a learning exercise: every file is written by hand, and each step
 
 ```
 amr_manipulator_description/   URDF/xacro (base, UR5e, gripper, test payload), controller YAML
-amr_manipulator_gazebo/        launch file, bridge.yaml, worlds, test models (box, pedestal)
+amr_manipulator_gazebo/        launch files (simulation, SLAM), bridge.yaml, worlds, models, saved maps
 amr_manipulator_control/       custom ros2_control controllers (arm and gripper)
 scripts/                       diagnostic and test tools (Python)
 ```
@@ -46,7 +46,17 @@ source install/setup.bash
 ros2 launch amr_manipulator_gazebo sim.launch.py
 # Optional test payload at the TCP [kg]
 ros2 launch amr_manipulator_gazebo sim.launch.py payload_mass:=3.0
+# Warehouse world, no GUI. The arm is folded into the travel pose after start-up;
+# stow:=false keeps the start-up pose (home90) for manipulation tests
+ros2 launch amr_manipulator_gazebo sim.launch.py world:=warehouse.sdf gui:=false [stow:=false]
+
+# Mapping (second terminal), then drive with the keyboard and save the map
+ros2 launch amr_manipulator_gazebo slam.launch.py
+ros2 run teleop_twist_keyboard teleop_twist_keyboard
+ros2 run nav2_map_server map_saver_cli -f amr_manipulator_gazebo/maps/warehouse
 ```
+
+Stop a simulation with Ctrl+C and check that no `ign gazebo` process is left: a second Gazebo server makes the controller spawners fail with "Controller already loaded".
 
 Useful tools (all in `scripts/`):
 
@@ -60,6 +70,12 @@ python3 scripts/grip.py open
 python3 scripts/tcp_pose.py --frame base_footprint
 # Drive straight and report drift, arm error and gripper state
 python3 scripts/drive_test.py --speed 0.3 --time 6
+# Footprint of the platform, of the arm and of the whole robot (needs the simulation running)
+python3 scripts/robot_geometry.py
+# Rays of the LiDAR that hit the robot itself (needs the simulation running)
+python3 scripts/scan_mask.py
+# Compare the saved map with the boxes of the SDF world (no ROS needed)
+python3 scripts/map_check.py [--tol-m 0.10]
 ```
 
 Note: new files need `colcon build` even with `--symlink-install`; the controller YAML is read only at startup.
@@ -146,7 +162,7 @@ The estimate settles at 3.0 kg with an accuracy of about 0.05 kg. At rest it sta
   `config/sensors_view.rviz`.
 
 Known limits:
-- The LiDAR sees the UR5e base (a short sector behind the sensor); it will be masked for SLAM and Nav2.
+- The LiDAR sees the UR5e base (a short sector behind the sensor); measured and filtered by range in step 6.
 - Gazebo depth is perfect (no noise, no holes). It is kept as ground truth. Realistic depth will
   come from a stereo pair in the same housing (50 mm baseline) at the perception step.
 - An object held between the fingers is closer than the 0.1 m near clip, so it is not visible.
@@ -203,11 +219,66 @@ The cost is physics, not rendering: shadows made no difference (0.38 without the
 - Articles are static: a dynamic copy still has to be swapped in when the robot picks one.
 - Textures are applied per face (stretched on boxes, a partial crop on the caps of cylinders).
 - Shelf levels 1 and 2 leave 0.27 m of free height: a top-down grasp is tight there, level 3 is open above.
-- The arm starts at the same pose as `home90`: the gripper is 0.64 m in front of `base_footprint` at 0.63 m, i.e. beyond the base. Driving into a bench at 0.3 m/s ended with the gripper hitting the bench top. The Nav2 footprint and a travel pose are needed before navigation.
+- The arm starts at the same pose as `home90`: the gripper is 0.64 m in front of `base_footprint` at 0.63 m, i.e. beyond the base. Driving into a bench at 0.3 m/s ended with the gripper hitting the bench top. The Nav2 footprint and a travel pose are needed before navigation (travel pose: see step 6).
+
+## Step 6: SLAM and navigation (in progress)
+
+Done: footprint and travel pose, LiDAR self-echo, mapping with slam_toolbox, numerical map check. Still to do: AMCL + Nav2 (6.5) and goals taken from the semantic map (6.6).
+
+### Footprint and travel pose
+
+Measured with `scripts/robot_geometry.py` (convex hull of the collision geometry in `base_footprint`, with the TF of the running robot).
+
+- **Platform:** x -0.400 .. +0.400, y -0.315 .. +0.315, an 8-vertex polygon: `[[-0.4,-0.25], [-0.1,-0.315], [0.1,-0.315], [0.4,-0.25], [0.4,0.25], [0.1,0.315], [-0.1,0.315], [-0.4,0.25]]`. The wheel axis is at x = 0, so the robot turns on the spot inside a circle of 0.472 m radius; the inscribed radius is 0.315 m. A circular footprint would waste the margin of the 1.2 m doors, so Nav2 gets the polygon.
+- **`home90` is not a driving pose:** the TCP is at (0.642, 0.134, 0.628) and the robot reaches x = +0.697.
+- **Travel pose** `[pi, -1.5708, 1.5708, -1.5708, -1.5708, 1.5708]`: `home90` with only the base joint turned by 180 degrees, so the arm folds over the chassis. The hull of the whole robot is then **identical** to the platform hull. The arm and the tools span x -0.381 .. +0.370, y -0.210 .. +0.075; the smallest margin is 19 mm, at the rear.
+- **Stow at launch.** Once all controllers are active, `sim.launch.py` runs `scripts/arm_goto.py` towards the travel pose (argument `stow`, default `true`). The script is found relative to the launch file, so this needs `colcon build --symlink-install`. The arm first ramps to the start-up pose and then sweeps 180 degrees (about 13 s in total): start in free space, or use `stow:=false`.
+
+| Check | Result |
+|---|---|
+| Tracking error to the travel pose | max 0.0089 rad (wrist3), other joints <= 0.0031 rad |
+| Peak torque | 27.2 N m (lift), 24.9 N m (elbow) |
+| Hull of the whole robot | equal to the platform hull |
+
+### LiDAR self-echo
+
+The base of the UR5e crosses the LiDAR plane about 0.19 m behind the sensor. `scripts/scan_mask.py` takes the median of 20 scans with the robot in the middle of the aisle (everything closer than 0.5 m is the robot itself):
+
+- **28 rays** in two symmetric sectors, -171.0 .. -157.9 and +157.9 .. +171.0 degrees, at 0.120 .. 0.153 m. Nothing else is closer than 0.5 m.
+- Between the two sectors (about +-9 degrees around 180) the sensor looks past the base: the closest return there is 4.774 m, the receiving bench seen through the west door (4.79 m expected). Probable cause: the base surface is closer than the 0.12 m minimum range and is not rendered; this was not checked in the simulator.
+
+So there is no angular mask: a minimum range of **0.2 m** removes every self-echo (4.7 cm above the farthest one, against a noise of 1 cm) and keeps the valid rays of the window. It is `min_laser_range` in slam_toolbox, and will be `obstacle_min_range` / `raytrace_min_range` in the Nav2 costmaps.
+
+### Mapping
+
+`launch/slam.launch.py` starts slam_toolbox (online, asynchronous, mapping mode) with `config/slam_toolbox.yaml`: the file installed with slam_toolbox, with three changes marked `CHANGED` (`min_laser_range` 0.2, `max_laser_range` 12, `map_update_interval` 2). The robot starts at the world origin, so the frame `map` coincides with the world frame. The simulation is a separate launch, so SLAM can be restarted alone. The map was driven by hand (keyboard teleoperation) through the aisles and the doors and saved in `amr_manipulator_gazebo/maps/warehouse.{yaml,pgm}` (242 x 163 cells, 0.05 m).
+
+### Map check
+
+`scripts/map_check.py` rasterizes the boxes of the SDF that cross the LiDAR plane (walls, partitions, shelf plinths, bench bodies, columns; articles and bench tops are higher) and compares them with the saved map, in both directions:
+
+- every occupied map cell: signed distance to the nearest box (negative = inside, positive = on the free side);
+- every exposed face of the world (next to free space reachable from the start): is there an occupied cell within one cell?
+
+| Check | Result |
+|---|---|
+| Signed distance of the occupied cells | median +0.5 cm, 5th..95th percentile -7.0 .. +6.5 cm, max +9.5 cm |
+| Occupied cells within 0.10 m of a box | 100 % (68.9 % within 0.05 m) |
+| Exposed faces covered (+-1 cell) | 99.7 %: walls, shelves and benches 100 %, `packing_table` 98.8 %, `column_1` 85.7 % |
+
+The tolerance of 0.10 m (two cells) was chosen after seeing these numbers: the first proposal, 0.05 m, would fail (68.9 %). The error is a band of 2 cells around each face with no systematic offset, and nothing is more than 9.5 cm away, so there is no double wall. Whether the band is normal blur of the occupied cells or a small registration error is not separated by this check.
+
+### Known limits (step 6, so far)
+
+- In the RViz view the robot ended the mapping run away from the start point, so loop closure was probably not exercised; the map check shows no error above 9.5 cm anyway.
+- The inside of shelves, benches and columns is unknown in the map (the LiDAR sees only the faces).
+- The travel pose leaves 19 mm at the rear: a joint error (stiction at rest up to about 3 mrad on elbow, wrist1 and wrist2, about 0.5-1 degree on wrist3) uses part of it.
+- Nav2 does not yet refuse to start if the arm is not in the travel pose.
+- Obstacles closer than 0.2 m to the LiDAR are ignored by SLAM and (later) by the costmaps; the sensor sits 6 cm behind the front edge of the platform.
 
 ## Roadmap
 
-3. **Step 6:** SLAM (slam_toolbox) and navigation (Nav2).
-4. **Step 7:** MoveIt 2 with a `FollowJointTrajectory` interface on top of the arm controller.
-5. **Step 8:** object perception (PyTorch / ONNX).
-6. **Step 9:** task logic with BehaviorTree.CPP.
+- **Step 6:** AMCL + Nav2 (6.5), goals from the semantic map (6.6).
+- **Step 7:** MoveIt 2 with a `FollowJointTrajectory` interface on top of the arm controller.
+- **Step 8:** object perception (PyTorch / ONNX).
+- **Step 9:** task logic with BehaviorTree.CPP.
