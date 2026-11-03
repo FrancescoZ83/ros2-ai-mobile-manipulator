@@ -14,6 +14,7 @@ find_package(rclcpp_lifecycle REQUIRED)
 find_package(kdl_parser REQUIRED)
 find_package(orocos_kdl REQUIRED)
 find_package(std_msgs REQUIRED)
+find_package(trajectory_msgs REQUIRED)
 
 add_library(amr_manipulator_control SHARED src/arm_model_controller.cpp src/gripper_controller.cpp)
 target_compile_features(amr_manipulator_control PUBLIC cxx_std_17)
@@ -22,7 +23,7 @@ target_include_directories(amr_manipulator_control PUBLIC
   $<INSTALL_INTERFACE:include>)
 ament_target_dependencies(amr_manipulator_control
   controller_interface hardware_interface pluginlib rclcpp rclcpp_lifecycle
-  kdl_parser orocos_kdl std_msgs)
+  kdl_parser orocos_kdl std_msgs trajectory_msgs)
 # Belt and braces: make sure the KDL library itself is linked
 target_link_libraries(amr_manipulator_control ${orocos_kdl_LIBRARIES})
 
@@ -33,8 +34,11 @@ install(TARGETS amr_manipulator_control
   ARCHIVE DESTINATION lib LIBRARY DESTINATION lib RUNTIME DESTINATION bin)
 install(DIRECTORY include/ DESTINATION include)
 
+# FollowJointTrajectory action server (Python), started by sim.launch.py
+install(PROGRAMS scripts/follow_joint_trajectory_server.py DESTINATION lib/${PROJECT_NAME})
+
 ament_export_include_directories(include)
 ament_export_libraries(amr_manipulator_control)
 ament_export_dependencies(controller_interface hardware_interface pluginlib
-  rclcpp rclcpp_lifecycle kdl_parser orocos_kdl std_msgs)
+  rclcpp rclcpp_lifecycle kdl_parser orocos_kdl std_msgs trajectory_msgs)
 ament_package()

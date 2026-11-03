@@ -38,4 +38,21 @@
       <origin xyz="0 0 0" rpy="${-pi/2} 0 ${-pi/2}"/>
     </joint>
   </xacro:macro>
+
+  <!-- Optical frames of a stereo pair inside the housing of the camera: the left and right cameras are
+       baseline/2 either side of camera_link (y is left). Empty links: they only give the sensors a frame. -->
+  <xacro:macro name="stereo_frames" params="parent:=camera_link baseline:=0.05">
+    <link name="stereo_left_optical_frame"/>
+    <joint name="stereo_left_optical_joint" type="fixed">
+      <parent link="${parent}"/>
+      <child link="stereo_left_optical_frame"/>
+      <origin xyz="0 ${baseline/2} 0" rpy="${-pi/2} 0 ${-pi/2}"/>
+    </joint>
+    <link name="stereo_right_optical_frame"/>
+    <joint name="stereo_right_optical_joint" type="fixed">
+      <parent link="${parent}"/>
+      <child link="stereo_right_optical_frame"/>
+      <origin xyz="0 ${-baseline/2} 0" rpy="${-pi/2} 0 ${-pi/2}"/>
+    </joint>
+  </xacro:macro>
 </robot>

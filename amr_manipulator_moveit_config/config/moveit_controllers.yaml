@@ -1,0 +1,24 @@
+# MoveIt sends a trajectory to the FollowJointTrajectory action server that
+# amr_manipulator_control starts with the simulation: /arm_model_controller/follow_joint_trajectory
+moveit_controller_manager: moveit_simple_controller_manager/MoveItSimpleControllerManager
+
+moveit_simple_controller_manager:
+  controller_names:
+    - arm_model_controller
+  arm_model_controller:
+    type: FollowJointTrajectory
+    action_ns: follow_joint_trajectory
+    default: true
+    joints:
+      - ur_shoulder_pan_joint
+      - ur_shoulder_lift_joint
+      - ur_elbow_joint
+      - ur_wrist_1_joint
+      - ur_wrist_2_joint
+      - ur_wrist_3_joint
+
+trajectory_execution:
+  allowed_execution_duration_scaling: 1.2
+  allowed_goal_duration_margin: 0.5
+  # The wrists rest 3-9 mrad off the reference (stiction), so the default 0.01 rad would be too tight
+  allowed_start_tolerance: 0.03

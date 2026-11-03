@@ -99,4 +99,42 @@
     </sensor>
   </gazebo>
 
+  <!-- Block 5: stereo pair in the same housing, 50 mm baseline (only with stereo:=true).
+       Same intrinsics as the RGB-D camera above. The left camera is an rgbd_camera, so that it
+       also gives the true depth in its own frame (the reference to measure the stereo depth against);
+       the right one is a plain camera. The images get a little noise (assumed, not calibrated). -->
+  <xacro:if value="$(arg stereo)">
+    <gazebo reference="camera_link">
+      <sensor name="stereo_left" type="rgbd_camera">
+        <pose>0 0.025 0 0 0 0</pose>
+        <always_on>true</always_on>
+        <visualize>false</visualize>
+        <update_rate>10</update_rate>
+        <topic>/stereo/left</topic>
+        <ignition_frame_id>stereo_left_optical_frame</ignition_frame_id>
+        <camera>
+          <horizontal_fov>1.2</horizontal_fov>
+          <image><width>320</width><height>240</height><format>R8G8B8</format></image>
+          <clip><near>0.1</near><far>10.0</far></clip>
+          <noise><type>gaussian</type><mean>0.0</mean><stddev>0.01</stddev></noise>
+          <depth_camera><clip><near>0.1</near><far>10.0</far></clip></depth_camera>
+        </camera>
+      </sensor>
+      <sensor name="stereo_right" type="camera">
+        <pose>0 -0.025 0 0 0 0</pose>
+        <always_on>true</always_on>
+        <visualize>false</visualize>
+        <update_rate>10</update_rate>
+        <topic>/stereo/right/image</topic>
+        <ignition_frame_id>stereo_right_optical_frame</ignition_frame_id>
+        <camera>
+          <horizontal_fov>1.2</horizontal_fov>
+          <image><width>320</width><height>240</height><format>R8G8B8</format></image>
+          <clip><near>0.1</near><far>10.0</far></clip>
+          <noise><type>gaussian</type><mean>0.0</mean><stddev>0.01</stddev></noise>
+        </camera>
+      </sensor>
+    </gazebo>
+  </xacro:if>
+
 </robot>

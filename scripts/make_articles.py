@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Generate the article models (model.config, model.sdf, texture PNG) from articles.yaml."""
 import argparse
+import math
 import random
 from pathlib import Path
 
@@ -53,15 +54,22 @@ def geometry_and_inertia(art):
 
 
 def check_limits(art, limits):
+    """The article must fit the gripper when it is turned by the yaw jitter of the stock."""
     if art['shape'] == 'box':
-        width, height = min(art['size'][:2]), art['size'][2]
+        yaw = math.radians(limits['yaw_jitter_deg'])
+        # Extent along the aisle (x of the box) of a box turned by the largest yaw
+        width = art['size'][0] * math.cos(yaw) + art['size'][1] * math.sin(yaw)
+        height = art['size'][2]
     else:
         width, height = 2 * art['size'][0], art['size'][1]
     if width > limits['gripper_opening']:
-        raise ValueError(f"{art['name']}: {width * 1000:.0f} mm does not fit the gripper "
+        raise ValueError(f"{art['name']}: {width * 1000:.1f} mm along the aisle does not fit the gripper "
                          f"({limits['gripper_opening'] * 1000:.0f} mm)")
     if height > limits['max_height']:
         raise ValueError(f"{art['name']}: height {height} m is above {limits['max_height']} m")
+    if height < limits['min_height']:
+        raise ValueError(f"{art['name']}: height {height} m is below {limits['min_height']} m: the body of the "
+                         f"gripper would touch the shelf")
 
 
 def model_sdf(art):

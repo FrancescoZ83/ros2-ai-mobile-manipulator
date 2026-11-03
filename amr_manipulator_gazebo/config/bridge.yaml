@@ -62,6 +62,37 @@
   gz_type_name: "ignition.msgs.CameraInfo"
   direction: GZ_TO_ROS
 
+# Stereo pair (only with stereo:=true in the simulation launch): left color + true depth, right color
+- ros_topic_name: "/stereo/left/image"
+  gz_topic_name: "/stereo/left/image"
+  ros_type_name: "sensor_msgs/msg/Image"
+  gz_type_name: "ignition.msgs.Image"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "/stereo/left/depth_image"
+  gz_topic_name: "/stereo/left/depth_image"
+  ros_type_name: "sensor_msgs/msg/Image"
+  gz_type_name: "ignition.msgs.Image"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "/stereo/left/camera_info"
+  gz_topic_name: "/stereo/left/camera_info"
+  ros_type_name: "sensor_msgs/msg/CameraInfo"
+  gz_type_name: "ignition.msgs.CameraInfo"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "/stereo/right/image"
+  gz_topic_name: "/stereo/right/image"
+  ros_type_name: "sensor_msgs/msg/Image"
+  gz_type_name: "ignition.msgs.Image"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "/stereo/right/camera_info"
+  gz_topic_name: "/stereo/right/camera_info"
+  ros_type_name: "sensor_msgs/msg/CameraInfo"
+  gz_type_name: "ignition.msgs.CameraInfo"
+  direction: GZ_TO_ROS
+
 # Point cloud: disabled for now. At 320x240 it is about 1.2 MB per message and costs a lot of
 # CPU in the bridge. Enable it when perception needs it.
 # - ros_topic_name: "/camera/points"

@@ -18,6 +18,7 @@
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp_lifecycle/state.hpp"
 #include "std_msgs/msg/float64_multi_array.hpp"
+#include "trajectory_msgs/msg/joint_trajectory.hpp"
 
 namespace amr_manipulator_control
 {
@@ -54,6 +55,12 @@ private:
 
   // Goal topic callback: runs in the executor thread, never in the control loop
   void on_goal(const Float64MultiArray & msg);
+
+  // Trajectory topic callback: checks the message and hands it over, runs in the executor thread
+  void on_trajectory(const trajectory_msgs::msg::JointTrajectory & msg);
+
+  // Reference (position, velocity, acceleration) from the trajectory being followed
+  void sample_trajectory();
 
   // Timer callback: publishes the last debug sample, runs in the executor thread
   void publish_debug();
@@ -124,6 +131,24 @@ private:
   std::vector<double> pending_goal_;
   double pending_time_{1.0};
   rclcpp::Subscription<Float64MultiArray>::SharedPtr goal_sub_;
+
+  // Multi-point trajectory (quintic Hermite segments through position, velocity, acceleration).
+  // Points are stored point by point: p[k * n + i] is joint i at point k.
+  struct Trajectory
+  {
+    std::vector<double> t;           // time of each point from the start [s]
+    std::vector<double> p, v, a;
+  };
+  std::mutex traj_mutex_;
+  bool traj_pending_{false};
+  Trajectory pending_traj_;          // written by the subscriber thread under traj_mutex_
+  Trajectory traj_;                  // followed by the control thread
+  bool traj_active_{false};
+  std::size_t traj_seg_{0};          // segment [seg, seg + 1] containing the current time
+  double traj_start_tol_{0.05};      // [rad] a trajectory must start this close to where the arm is
+  std::atomic<bool> traj_start_rejected_{false};
+  std::vector<double> ref_qdd_;      // reference acceleration, as ref_q_ and ref_qd_
+  rclcpp::Subscription<trajectory_msgs::msg::JointTrajectory>::SharedPtr traj_sub_;
 
   // Debug sample handover from the control thread to the timer thread
   std::mutex debug_mutex_;

@@ -16,6 +16,9 @@
   <depend>kdl_parser</depend>
   <depend>orocos_kdl</depend>
   <depend>std_msgs</depend>
+  <depend>trajectory_msgs</depend>
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>control_msgs</exec_depend>
 
   <export>
     <build_type>ament_cmake</build_type>

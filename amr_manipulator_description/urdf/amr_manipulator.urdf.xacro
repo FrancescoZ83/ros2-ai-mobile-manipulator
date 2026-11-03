@@ -8,6 +8,8 @@
   <xacro:property name="ur_cfg" value="$(find amr_manipulator_description)/config/arm/ur5e"/>
   <xacro:arg name="use_sim" default="false"/>
   <xacro:arg name="payload_mass" default="0.0"/>
+  <!-- Stereo pair in the housing of the camera (two more renderings: off by default) -->
+  <xacro:arg name="stereo" default="false"/>
 
   <xacro:mobile_base/>
 
@@ -46,6 +48,10 @@
   <xacro:rgbd_camera name="camera" parent="gripper_base_link">
     <origin xyz="0.0425 0 0.03" rpy="0 ${-pi/2} 0"/>
   </xacro:rgbd_camera>
+
+  <xacro:if value="$(arg stereo)">
+    <xacro:stereo_frames parent="camera_link" baseline="0.05"/>
+  </xacro:if>
 
   <xacro:if value="$(arg use_sim)">
     <xacro:include filename="$(find amr_manipulator_description)/urdf/sim/gazebo_physics.xacro"/>

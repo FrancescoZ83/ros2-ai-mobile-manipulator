@@ -73,7 +73,7 @@ def open_spot(sem, boxes, zone, margin=0.5):
     return best[1], best[2], 0.0
 
 
-def resolve(sem, boxes, name, gap=0.25, facing=False):
+def resolve(sem, boxes, name, gap=0.25, facing=True):
     """(kind, (x, y, yaw)) for a name of the semantic map."""
     if name in sem['shelves']:
         return 'shelf', shelf_station(sem, name, gap, facing)
@@ -116,7 +116,7 @@ def main():
     ap.add_argument('--map', default=os.path.join(GAZEBO, 'config', 'semantic_map.yaml'))
     ap.add_argument('--sdf', default=os.path.join(GAZEBO, 'worlds', 'warehouse.sdf'))
     ap.add_argument('--gap', type=float, default=0.25, help='free distance platform - shelf face / bench [m]')
-    ap.add_argument('--facing', action='store_true', help='bow towards the shelf instead of along the aisle')
+    ap.add_argument('--along', action='store_true', help='bow along the aisle (yaw 0) instead of towards the shelf')
     ap.add_argument('--plane', type=float, default=0.275, help='LiDAR height [m]')
     args = ap.parse_args()
 
@@ -124,7 +124,7 @@ def main():
     boxes = map_check.sdf_boxes(args.sdf, args.plane)
     print(f"{'name':16s} {'kind':6s} {'x':>7s} {'y':>7s} {'yaw[deg]':>9s} {'at pose[m]':>11s} {'full turn[m]':>13s}")
     for name in args.names or names(sem):
-        kind, (x, y, yaw) = resolve(sem, boxes, name, args.gap, args.facing)
+        kind, (x, y, yaw) = resolve(sem, boxes, name, args.gap, not args.along)
         at, turn = clearance(boxes, x, y, yaw), turn_clearance(boxes, x, y)
         note = 'overlap!' if at < 0 else '' if turn >= INSCRIBED else 'cannot turn here' if turn < 0.05 else 'tight turn'
         print(f'{name:16s} {kind:6s} {x:+7.3f} {y:+7.3f} {math.degrees(yaw):9.1f} {at:11.3f} {turn:13.3f}  {note}')

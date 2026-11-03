@@ -4,10 +4,15 @@
 # shape, size and look, because a neural network will have to recognise them.
 texture_size: 256
 
-# Limits that come from the robot: gripper opening 85 mm, shelf level spacing
+# Limits that come from the robot: gripper opening 85 mm, shelf level spacing.
+# The articles are taken from the front, the fingers closing along the aisle: so the extent of the article
+# along the aisle, with the yaw jitter of the stock (warehouse_layout.yaml, same value), must fit the opening;
+# and the body of the gripper is 60 mm thick, so the centre of the article must be above 30 mm (with margin).
 limits:
   gripper_opening: 0.085
   max_height: 0.18
+  min_height: 0.07
+  yaw_jitter_deg: 15
 
 # Texture description, in normalised image coordinates (u to the right, v downwards):
 #   base   background colour
@@ -65,7 +70,7 @@ articles:
 
   - name: parcel
     shape: box
-    size: [0.100, 0.070, 0.040]
+    size: [0.060, 0.080, 0.090]
     mass: 0.15
     texture:
       base: "#b98a56"

@@ -77,6 +77,7 @@ controller_interface::CallbackReturn ArmModelController::on_init()
     auto_declare<double>("payload_estimate", 0.0);
     auto_declare<double>("payload_min", 0.0);
     auto_declare<double>("payload_max", 6.0);
+    auto_declare<double>("trajectory_start_tolerance", 0.05);
   } catch (const std::exception & e) {
     RCLCPP_ERROR(get_node()->get_logger(), "on_init failed: %s", e.what());
     return controller_interface::CallbackReturn::ERROR;
@@ -145,6 +146,7 @@ controller_interface::CallbackReturn ArmModelController::on_configure(
 
     coriolis_scale_ = node->get_parameter("coriolis_scale").as_double();
     mode_ = static_cast<int>(node->get_parameter("mode").as_int());
+    traj_start_tol_ = node->get_parameter("trajectory_start_tolerance").as_double();
   } catch (const std::exception & e) {
     // Typical cause: an array written as [150, 150] (integers) instead of [150.0, 150.0]
     RCLCPP_ERROR(node->get_logger(), "Bad parameter: %s", e.what());
@@ -275,14 +277,23 @@ controller_interface::CallbackReturn ArmModelController::on_configure(
   q_goal_.assign(n, 0.0);
   ref_q_.assign(n, 0.0);
   ref_qd_.assign(n, 0.0);
+  ref_qdd_.assign(n, 0.0);
   pending_goal_.assign(n, 0.0);
   goal_pending_ = false;
+  traj_active_ = false;
+  traj_pending_ = false;
 
   // Goal topic: [q_1 ... q_n, duration]
   goal_sub_.reset();
   goal_sub_ = node->create_subscription<Float64MultiArray>(
     "~/goal", rclcpp::SystemDefaultsQoS(),
     [this](const Float64MultiArray & msg) {on_goal(msg);});
+
+  // Trajectory topic: a JointTrajectory with positions, velocities and accelerations (e.g. from MoveIt)
+  traj_sub_.reset();
+  traj_sub_ = node->create_subscription<trajectory_msgs::msg::JointTrajectory>(
+    "~/trajectory", rclcpp::SystemDefaultsQoS(),
+    [this](const trajectory_msgs::msg::JointTrajectory & msg) {on_trajectory(msg);});
 
   // Debug topic: [t_traj, T, q_d(n), q(n), qd_d(n), qd(n), tau(n)], published at 50 Hz
   debug_data_.assign(2 + 5 * n, 0.0);
@@ -398,8 +409,105 @@ void ArmModelController::on_goal(const Float64MultiArray & msg)
   goal_pending_ = true;
 }
 
+void ArmModelController::on_trajectory(const trajectory_msgs::msg::JointTrajectory & msg)
+{
+  const std::size_t n = joint_names_.size();
+  const std::size_t m = msg.points.size();
+  auto reject = [this](const std::string & why) {
+      RCLCPP_WARN(get_node()->get_logger(), "Trajectory ignored: %s", why.c_str());
+    };
+  if (m < 2) {
+    reject("it needs at least 2 points");
+    return;
+  }
+  if (msg.joint_names.size() != n) {
+    reject("it must name exactly the " + std::to_string(n) + " joints of the arm");
+    return;
+  }
+  // Column of each of our joints in the message (the message may list them in another order)
+  std::vector<std::size_t> col(n);
+  for (std::size_t i = 0; i < n; ++i) {
+    const auto it = std::find(msg.joint_names.begin(), msg.joint_names.end(), joint_names_[i]);
+    if (it == msg.joint_names.end()) {
+      reject("joint " + joint_names_[i] + " is missing");
+      return;
+    }
+    col[i] = static_cast<std::size_t>(it - msg.joint_names.begin());
+  }
+
+  Trajectory traj;
+  traj.t.resize(m);
+  traj.p.resize(m * n);
+  traj.v.resize(m * n);
+  traj.a.resize(m * n);
+  for (std::size_t k = 0; k < m; ++k) {
+    const auto & pt = msg.points[k];
+    if (pt.positions.size() != n || pt.velocities.size() != n || pt.accelerations.size() != n) {
+      reject("every point needs positions, velocities and accelerations (MoveIt's time "
+        "parameterization provides them)");
+      return;
+    }
+    traj.t[k] = rclcpp::Duration(pt.time_from_start).seconds();
+    bool ok = std::isfinite(traj.t[k]) && traj.t[k] >= 0.0 && (k == 0 || traj.t[k] > traj.t[k - 1] + 1e-6);
+    for (std::size_t i = 0; i < n; ++i) {
+      const double p = pt.positions[col[i]];
+      const double v = pt.velocities[col[i]];
+      const double a = pt.accelerations[col[i]];
+      // The speed limit is the same one used for the point-to-point goals, with 10 % margin
+      ok = ok && std::isfinite(p) && std::isfinite(v) && std::isfinite(a) &&
+        std::abs(v) <= 1.1 * velocity_limits_[i];
+      traj.p[k * n + i] = p;
+      traj.v[k * n + i] = v;
+      traj.a[k * n + i] = a;
+    }
+    if (!ok) {
+      reject("point " + std::to_string(k) + " has a non-finite value, a speed above the limit, "
+        "or a time that does not increase");
+      return;
+    }
+  }
+  std::lock_guard<std::mutex> lock(traj_mutex_);
+  std::swap(pending_traj_, traj);   // the control thread takes it when the arm is idle (latest wins)
+  traj_pending_ = true;
+}
+
+void ArmModelController::sample_trajectory()
+{
+  const std::size_t n = joint_names_.size();
+  const std::size_t last = traj_.t.size() - 1;
+  const double tt = std::clamp(t_, traj_.t.front(), traj_.t.back());
+  while (traj_seg_ + 1 < last && tt > traj_.t[traj_seg_ + 1]) {
+    ++traj_seg_;
+  }
+  const std::size_t k = traj_seg_;
+  const double T = traj_.t[k + 1] - traj_.t[k];
+  const double tau = tt - traj_.t[k];
+  const double T2 = T * T;
+  const double T3 = T2 * T;
+  for (std::size_t i = 0; i < n; ++i) {
+    const double p0 = traj_.p[k * n + i], v0 = traj_.v[k * n + i], a0 = traj_.a[k * n + i];
+    const double p1 = traj_.p[(k + 1) * n + i], v1 = traj_.v[(k + 1) * n + i];
+    const double a1 = traj_.a[(k + 1) * n + i];
+    // Quintic through (p0, v0, a0) at 0 and (p1, v1, a1) at T: p0 + v0 t + a0/2 t^2 + c3 t^3 + ...
+    const double d = p1 - p0;
+    const double c2 = 0.5 * a0;
+    const double c3 = (20.0 * d - (8.0 * v1 + 12.0 * v0) * T - (3.0 * a0 - a1) * T2) / (2.0 * T3);
+    const double c4 = (-30.0 * d + (14.0 * v1 + 16.0 * v0) * T + (3.0 * a0 - 2.0 * a1) * T2) /
+      (2.0 * T3 * T);
+    const double c5 = (12.0 * d - 6.0 * (v1 + v0) * T - (a0 - a1) * T2) / (2.0 * T3 * T2);
+    ref_q_[i] = p0 + tau * (v0 + tau * (c2 + tau * (c3 + tau * (c4 + tau * c5))));
+    ref_qd_[i] = v0 + tau * (2.0 * c2 + tau * (3.0 * c3 + tau * (4.0 * c4 + tau * 5.0 * c5)));
+    ref_qdd_[i] = 2.0 * c2 + tau * (6.0 * c3 + tau * (12.0 * c4 + tau * 20.0 * c5));
+  }
+}
+
 void ArmModelController::publish_debug()
 {
+  // Warnings are raised here, not in the control loop
+  if (traj_start_rejected_.exchange(false)) {
+    RCLCPP_WARN(get_node()->get_logger(),
+      "Trajectory ignored: its first point is more than %.3f rad from where the arm is", traj_start_tol_);
+  }
   Float64MultiArray msg;
   Float64MultiArray payload_msg;
   {
@@ -451,6 +559,11 @@ controller_interface::CallbackReturn ArmModelController::on_activate(
     std::lock_guard<std::mutex> lock(goal_mutex_);
     goal_pending_ = false;
   }
+  {
+    std::lock_guard<std::mutex> lock(traj_mutex_);
+    traj_pending_ = false;
+  }
+  traj_active_ = false;
   filter_primed_ = false;  // the filter restarts from the first measurement
   payload_hat_ = payload_init_;  // every activation restarts from the configured estimate
   payload_set_pending_ = false;
@@ -480,6 +593,37 @@ controller_interface::return_type ArmModelController::update(
     payload_hat_ = std::clamp(payload_set_.load(), payload_min_, payload_max_);
   }
 
+  // 0b. A finished trajectory leaves the arm holding its last point
+  if (traj_active_ && t_ >= traj_time_) {
+    const std::size_t last = traj_.t.size() - 1;
+    for (std::size_t i = 0; i < n; ++i) {
+      q_start_[i] = q_goal_[i] = traj_.p[last * n + i];
+    }
+    traj_active_ = false;
+  }
+
+  // 0c. When idle, a pending trajectory is taken before a pending goal. It must start where
+  //     the reference is (the goal of the last move), otherwise it is dropped.
+  if (!traj_active_ && t_ >= traj_time_) {
+    std::unique_lock<std::mutex> lock(traj_mutex_, std::try_to_lock);
+    if (lock.owns_lock() && traj_pending_) {
+      traj_pending_ = false;
+      std::swap(traj_, pending_traj_);
+      double worst = 0.0;
+      for (std::size_t i = 0; i < n; ++i) {
+        worst = std::max(worst, std::abs(traj_.p[i] - q_goal_[i]));
+      }
+      if (worst <= traj_start_tol_) {
+        traj_active_ = true;
+        traj_seg_ = 0;
+        traj_time_ = traj_.t.back();
+        t_ = 0.0;
+      } else {
+        traj_start_rejected_ = true;
+      }
+    }
+  }
+
   // 1. Take a pending goal when the current trajectory is over; stretch T to respect
   //    the velocity limits (quintic peak speed is 1.875 * |delta| / T)
   if (t_ >= traj_time_) {
@@ -499,12 +643,23 @@ controller_interface::return_type ArmModelController::update(
   }
   t_ += dt;
 
-  // 2. Quintic blending: s(u) = 10u^3 - 15u^4 + 6u^5, u = t/T in [0, 1]
-  const double T = traj_time_;
-  const double u = std::min(t_ / T, 1.0);
-  const double s = u * u * u * (10.0 - 15.0 * u + 6.0 * u * u);
-  const double ds = 30.0 * u * u * (1.0 - u) * (1.0 - u) / T;
-  const double dds = 60.0 * u * (1.0 - u) * (1.0 - 2.0 * u) / (T * T);
+  // 2. Reference. A trajectory is sampled from its Hermite segments; otherwise quintic blending
+  //    s(u) = 10u^3 - 15u^4 + 6u^5, u = t/T in [0, 1], from q_start_ to q_goal_
+  if (traj_active_) {
+    sample_trajectory();
+  } else {
+    const double T = traj_time_;
+    const double u = std::min(t_ / T, 1.0);
+    const double s = u * u * u * (10.0 - 15.0 * u + 6.0 * u * u);
+    const double ds = 30.0 * u * u * (1.0 - u) * (1.0 - u) / T;
+    const double dds = 60.0 * u * (1.0 - u) * (1.0 - 2.0 * u) / (T * T);
+    for (std::size_t i = 0; i < n; ++i) {
+      const double delta = q_goal_[i] - q_start_[i];
+      ref_q_[i] = q_start_[i] + s * delta;
+      ref_qd_[i] = ds * delta;
+      ref_qdd_[i] = dds * delta;
+    }
+  }
 
   // 3. Measured state. Velocity = simulated sensor noise + first-order low-pass filter
   const int mode = mode_.load();
@@ -535,10 +690,7 @@ controller_interface::return_type ArmModelController::update(
 
   // 5. Reference and feedback, joint by joint
   for (std::size_t i = 0; i < n; ++i) {
-    const double delta = q_goal_[i] - q_start_[i];
-    ref_q_[i] = q_start_[i] + s * delta;
-    ref_qd_[i] = ds * delta;
-    const double ref_qdd = dds * delta;
+    const double ref_qdd = ref_qdd_[i];
     const double e = ref_q_[i] - q_(i);
     const double ed = ref_qd_[i] - qdot_(i);
     if (mode >= 1) {

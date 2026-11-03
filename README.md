@@ -15,8 +15,8 @@ The project is a learning exercise: every file is written by hand, and each step
 | 4 | Sensors in Gazebo (LiDAR, RGB-D) | done |
 | 5 | Warehouse world and semantic map | done |
 | 6 | slam_toolbox + Nav2 | done: travel pose, mapping, map check, navigation through the doors, goals taken from the semantic map |
-| 7 | MoveIt 2 (inverse kinematics, planning, collisions) | planned |
-| 8 | Perception (PyTorch / ONNX) | planned |
+| 7 | MoveIt 2 (inverse kinematics, planning, collisions) | in progress: trajectory interface, MoveIt configuration, planning scene, reach analysis and the station design done; the gripper sequence is next |
+| 8 | Perception (PyTorch / ONNX) | in progress: stereo pair and depth, observation poses done; dataset and recognition next |
 | 9 | Task logic with BehaviorTree.CPP | planned |
 
 ## Stack
@@ -31,7 +31,9 @@ The project is a learning exercise: every file is written by hand, and each step
 ```
 amr_manipulator_description/   URDF/xacro (base, UR5e, gripper, test payload), controller YAML
 amr_manipulator_gazebo/        launch files (simulation, SLAM), bridge.yaml, worlds, models, saved maps
-amr_manipulator_control/       custom ros2_control controllers (arm and gripper)
+amr_manipulator_control/       custom ros2_control controllers (arm and gripper), FollowJointTrajectory server
+amr_manipulator_moveit_config/ MoveIt 2 configuration (SRDF, kinematics, planners, controller), planning scene
+amr_manipulator_perception/    perception nodes: stereo depth now, recognition and pose later
 scripts/                       diagnostic and test tools (Python)
 ```
 
@@ -87,8 +89,26 @@ python3 scripts/map_check.py [--tol-m 0.10]
 # Turn in place in 90 degree steps: odometry yaw against Gazebo's ground truth (Nav2 stopped)
 python3 scripts/turn_test.py [--rate -0.5]
 # Pose and clearance of every place of the semantic map (no ROS needed)
-python3 scripts/semantic_goals.py [S3 packing_table] [--gap 0.25] [--facing]
+python3 scripts/semantic_goals.py [S3 packing_table] [--gap 0.25] [--along]
+# MoveIt (move_group running): kinematics, joint and pose goals, straight lines, collisions at any base pose
+python3 scripts/moveit_check.py ik | joint --named home90 | pose --dz -0.10 | cartesian --dz 0.10
+python3 scripts/moveit_check.py valid --whole --base 0.6 -0.335 0 --named home90
+# Reach analysis of the shelf slots from the pick stations (move_group running, no simulation needed)
+python3 scripts/reach_check.py --generic --grasps front --orientations facing --gaps 0.20 0.25 0.30
+# Stereo pair (simulation started with stereo:=true): put the camera in front of a slot, then measure the stereo depth
+python3 scripts/moveit_check.py look --slot S3.L2.n4 [--dist 0.30]
+python3 scripts/stereo_check.py --frames 5 --save /tmp/sc
+# A multi-point trajectory through the FollowJointTrajectory action, with the tracking error
+python3 scripts/traj_test.py --goal 0 -1.5708 1.5708 -1.5708 -1.5708 1.5708 --time 6 [--shape via]
 ```
+
+MoveIt, with the simulation running (the planning scene of the warehouse is loaded by the launch):
+
+```bash
+ros2 launch amr_manipulator_moveit_config move_group.launch.py static_map_odom:=true [rviz:=true]
+```
+
+`static_map_odom:=true` publishes an identity `map` to `odom` transform: use it only without AMCL or SLAM (the robot starts at the origin, where the frames coincide).
 
 Note: new files need `colcon build` even with `--symlink-install`; the controller YAML is read only at startup.
 
@@ -175,8 +195,8 @@ The estimate settles at 3.0 kg with an accuracy of about 0.05 kg. At rest it sta
 
 Known limits:
 - The LiDAR sees the UR5e base (a short sector behind the sensor); measured and filtered by range in step 6.
-- Gazebo depth is perfect (no noise, no holes). It is kept as ground truth. Realistic depth will
-  come from a stereo pair in the same housing (50 mm baseline) at the perception step.
+- Gazebo depth is perfect (no noise, no holes). It is kept as ground truth. Realistic depth comes from a stereo
+  pair in the same housing (50 mm baseline), see step 8.
 - An object held between the fingers is closer than the 0.1 m near clip, so it is not visible.
 - `camera_info` counts the image corner as the pixel origin (principal point 160, 120): pixel
   indices need a +0.5 shift in projection code.
@@ -187,7 +207,7 @@ A small order-picking warehouse, 12 x 8 m, generated from a single description (
 
 - **Building.** Three zones (receiving, storage, packing) separated by two partitions with four 1.2 m doors.
 - **Furniture.** Seven shelf units (two rows, three levels at 0.30 / 0.60 / 0.90 m, accessible from both sides), two work benches, two bins on the packing bench, two columns. Level 1 is the top of a solid plinth, so the LiDAR plane (z = 0.275 m) sees every shelf as a solid rectangle.
-- **Articles.** Six classes (`cereal_box`, `juice_carton`, `soup_can`, `water_bottle`, `parcel`, `jam_jar`), all primitives with generated textures. **No markers**: a neural network will have to recognise them. Sizes respect the gripper (85 mm) and the level spacing.
+- **Articles.** Six classes (`cereal_box`, `juice_carton`, `soup_can`, `water_bottle`, `parcel`, `jam_jar`), all primitives with generated textures. **No markers**: a neural network will have to recognise them. Sizes respect the gripper (85 mm) and the level spacing. `make_articles.py` checks them: a box turned by the yaw jitter of the stock (15 degrees) must still be narrower than the opening along the aisle (the fingers close along it when an article is taken from the front), and no article is lower than 0.07 m, because the body of the gripper is 0.06 m thick (see step 7). The parcel was first 0.10 x 0.07 x 0.04 m; it is now 0.06 x 0.08 x 0.09 m.
 - **Stock.** 210 slots (5 per face and level). Each slot is filled with probability 0.30 (seed 1): 69 articles, 28 of them on the faces the robot works from (`pickable`). Articles are static by default; a dynamic copy is only needed when one is picked.
 - **Semantic map** (`config/semantic_map.yaml`): zones, doors with the zones they connect, shelves, benches, bins and every slot with its pose and article.
 
@@ -327,7 +347,7 @@ The odometry always reports about 89.4 degrees for a 90 degree step; the body tu
 
 | Name | Pose |
 |---|---|
-| `S1`..`S4`, `N1`..`N3` | in the aisle beside the shelf unit, bow along the aisle (yaw 0), 0.25 m between the platform and the pick face (south row: north face; north row: south face; the face is the one whose slots are `pickable`) |
+| `S1`..`S4`, `N1`..`N3` | in the aisle in front of the pick face, bow towards the shelf (yaw -90 degrees on the south row, +90 on the north row), 0.25 m between the platform and the pick face (south row: north face; north row: south face; the face is the one whose slots are `pickable`). `--along` gives the first design of step 6: beside the shelf, bow along the aisle, yaw 0 |
 | `receiving_table`, `packing_table`, `bin_1`, `bin_2` | on the side of the bench that faces the storage zone, bow towards the bench, 0.25 m from the bench top: (-3.75, 0) and (3.75, 0). A bin uses the station of its bench |
 | `P1`..`P4` | on the door line, yaw 0 |
 | `receiving`, `storage`, `packing` | the point of the zone farthest from any obstacle at the LiDAR height: (-4.5, -2.5), (1.7, 2.8), (4.5, 2.5) |
@@ -336,12 +356,13 @@ The shelf stations stand beside the shelf, not in front of it, because a turn on
 
 | Station | At the pose | During a full turn on the spot |
 |---|---|---|
-| Shelf, bow along the aisle (gap 0.25) | 0.250 m | 0.094 m |
-| Shelf, bow towards the shelf (`--facing`, gap 0.30) | 0.300 m | 0.229 m |
+| Shelf, bow along the aisle (`--along`, gap 0.25) | 0.250 m | 0.094 m |
+| Shelf, bow towards the shelf (default, gap 0.25) | 0.250 m | 0.179 m |
+| Shelf, bow towards the shelf (gap 0.30) | 0.300 m | 0.229 m |
 | Bench | 0.300 m | 0.229 m |
 | Zone points | 0.84 .. 1.03 m | 0.73 .. 0.96 m |
 
-With the bow along the aisle neighbouring units need no turn: the robot drives along the aisle and the arm turns with its first joint. To stop with yaw 0 when it comes from the other side, the robot reverses; the gap of 0.25 m and this orientation are **provisional**, they depend on the reach of the arm (step 7).
+The results below, 36 goals, are for the first design (bow along the aisle, `--along`): neighbouring units need no turn, and to stop with yaw 0 coming from the other side the robot reverses. The reach analysis of step 7 then chose the bow towards the shelf, which is now the default (see step 7).
 
 `nav_semantic.py --tour all --repeat 3` visits the seven shelf units, the two benches and the three zones, three times: 36 goals, all reached, 3 recoveries in total (S1 twice, `packing_table` once). Final pose against Gazebo's ground truth:
 
@@ -368,10 +389,190 @@ Moving between neighbouring shelf units takes 5-10 s (path about 1.2-1.5 m); the
 - The pick stations at (+-3.8, 0) are too tight to turn in place (see above); open places will be needed for step 7.
 - At the shelf stations 7 of 21 arrivals ended more than 0.10 m from the goal in the ground truth (mean 0.079 m). The test did not split the error along and across the aisle; across it means towards or away from the shelf, which matters for the 0.25 m gap. `nav_goto.py` now prints both.
 - Crossing the aisle at constant heading (N1 to S1, 1.15 m) took 13.3 s and one recovery; it was done once.
-- The stations of the shelves and benches are provisional: the gap and the orientation depend on the reach of the arm.
+- The stations of the benches are provisional; those of the shelves were chosen in step 7 from the reach of the arm.
+
+## Step 7: MoveIt 2 (in progress)
+
+Done: trajectory interface of the arm controller (7.1), MoveIt configuration (7.2), planning scene of the warehouse (7.3), reach analysis on the shelf slots (7.4). Still to do: the gripper in the sequence approach, grasp, retreat.
+
+### Trajectory interface (7.1)
+
+MoveIt executes through a `FollowJointTrajectory` action; the arm controller only had its point-to-point `~/goal`. Now:
+
+- **`ArmModelController`** takes a `JointTrajectory` on `~/trajectory`. Between two consecutive points it uses the quintic through their position, velocity and acceleration (MoveIt's time parameterization gives all three), and feeds them to the computed torque as the reference. A trajectory needs at least 2 points, all three quantities on every point, increasing times and speeds below the limit of the controller (+10 %); it starts only when the arm is idle and its first point is within 0.05 rad of the reference. `~/goal` works as before.
+- **`follow_joint_trajectory_server.py`** (started with the simulation) forwards the trajectory, waits for its end, checks the final error (0.03 rad if the goal gives no tolerance) and answers. A cancel is rejected: the controller cannot stop a trajectory half way.
+
+Same move (travel to home90, 6 s) with `arm_goto.py` and through the action, largest tracking error [rad]:
+
+| Joint | `arm_goto` | action |
+|---|---|---|
+| pan / lift / elbow | 0.0012 / 0.0004 / 0.0012 | 0.0013 / 0.0004 / 0.0011 |
+| wrist1 / wrist2 / wrist3 | 0.0012 / 0.0031 / 0.0059 | 0.0012 / 0.0031 / 0.0059 |
+
+Peak torques are the same (about 27 N m on the lift, 25 N m on the elbow). A trajectory of only 3 points, with a non-zero speed in the middle, ends with `error_code 0` and the same errors.
+
+### MoveIt configuration (7.2)
+
+`amr_manipulator_moveit_config`: SRDF (group `arm`, the chain from `ur_base_link` to `gripper_tcp`; group `gripper`; named poses `travel`, `home90`, `open`, `closed`; planar virtual joint `map` to `base_footprint`, whose pose comes from TF), numerical KDL kinematics (IKFast in MoveIt covers the UR5, not the UR5e), OMPL, and the controller interface of 7.1.
+
+- **Collision matrix generated, not written:** `collisions_updater` of MoveIt on 10000 random configurations: 54 pairs disabled (31 adjacent, 23 never colliding). Forearm, wrists and upper arm against the chassis stay checked.
+- **Limits:** 1.5 rad/s and 2.0 rad/s^2 on every joint. The speed stays below what the controller accepts; the acceleration is a first value, to be checked against the torques. `allowed_start_tolerance` is 0.03 rad because the wrists rest 3-9 mrad off the reference (stiction).
+
+| Check | Result |
+|---|---|
+| Forward then inverse kinematics, 50 random configurations, seed up to 0.3 rad away | 50 of 50, pose error 0.010 mm and 0.0004 deg, 1 ms each |
+| Joint goal to `home90`, planned and executed | 3.3 s, largest joint error 0.0059 rad |
+| TCP down by 10 cm, IK seeded with the current joints and a joint goal | largest joint change 0.26 rad, TCP error 2.6 mm, 0.37 deg |
+| TCP up by 10 cm on a straight line | 100 % of the line, 12 points, TCP error 0.6 mm, 0.09 deg |
+| TCP by (+10, +10, 0) cm on a straight line | 100 %, 14 points, largest step 0.056 rad, TCP error 0.3 mm, 0.46 deg |
+
+**A pose goal in MoveIt's own way picks a far IK branch.** MoveIt samples the solution of a pose goal from random states, not from the current one. On 24 goals within 15 cm of `home90`, planned only: 21 were planned, and **19 of them changed a joint by more than 1 rad** (median 5.86 rad, largest 6.64); in the first run on the robot a move of 10 cm ended with wrist1 at -5.4 rad, and the way back was refused (`INVALID_MOTION_PLAN`: the time-parameterized path went through states in collision). So the arm is moved in two ways: an IK solution seeded with the current joints followed by a joint goal (far branches are refused, `--max-jump`), and `compute_cartesian_path` with a jump threshold for straight approach and retreat. The joint limits stay at the +-2 pi of the URDF: restricting them would remove the multiples of 2 pi but not the eight branches of a UR5e.
+
+### Planning scene (7.3)
+
+`scene_from_sdf.py` turns the SDF into collision objects in the frame `map`: one object per model (walls, shelves, benches, bins, columns), a box for every box collision, at every height: 14 objects, 75 boxes. It is applied once `move_group` is up (launch argument `scene`). The articles are not in the scene yet.
+
+Checked with `check_state_validity`, where the pose of the base is given in the request (no simulation needed):
+
+| Base pose, arm | Result |
+|---|---|
+| (0, 0), `travel`, whole robot | valid |
+| (0.6, -0.335) = station of S3, `home90`, whole robot | valid |
+| (0.6, -0.8), `travel`, whole robot | in collision: chassis, right wheel, upper arm and wrists against `shelf_S3` |
+| (0.6, -0.335), arm horizontal towards S3 with the elbow lowered, arm only | in collision: forearm, wrists, gripper and camera against `shelf_S3` |
+
+The same check on the running simulation (robot at the origin, whole robot at base pose (0.6, -0.8)) gives the same contacts. That the planners respect the scene was shown with a test obstacle, a 6 cm wall 12 cm ahead of the TCP across a straight line of 20 cm from `home90`: the straight-line path is complete without the wall, 25 % long with the wall and the collision check on, and 100 % with the check off.
+
+A straight line sideways from `travel` stops at 42 % with the check on or off, with the scene or without it: that is the reach of the arm, not a collision. A test of "stops before the shelf" from the origin therefore proves nothing: the shelves are 0.9 m from the robot and the arm cannot get there from the middle of the aisle.
+
+### Reach analysis (7.4)
+
+`scripts/reach_check.py` asks MoveIt, for every pickable slot and every station design, whether the arm can **approach and reach** the article: a collision-free IK solution of the pre-grasp pose (10 cm before the grasp, against the approach direction, with the planning scene of 7.3 and the base at the station pose), and from there a straight line to the grasp pose that goes 100 % of the way, free of collisions. The tool z axis is the approach direction and the fingers close along its y axis. Two kinds of grasp:
+
+- **top**: from above, fingers closing along the aisle (along the depth for an article too wide along the aisle, as the first parcel was);
+- **front**: horizontal, into the shelf, fingers closing along the aisle, tool x up (the camera on top).
+
+Station designs, as in step 6: robot beside the shelf with the bow along the aisle (`along`), or with the bow towards the shelf (`facing`); the gap is the free distance between the platform and the shelf face.
+
+**The tool is checked in free space first.** From the middle of the aisle, with the tool down, the arm reaches z 0.2 to 0.8 m at 0.4-0.7 m from its axis, and at z = 1.0 m only 0.3 m from it; with the tool horizontal it reaches z 0.4 to 1.2 m at 0.4-0.6 m. So the results below are limits of the arm and of the shelves, not of the tool.
+
+**The grasp from above is not possible on the shelves: 0 of 28 real articles, at every gap and orientation tried.** At levels 1 and 2 the board above leaves 0.27 m, not enough for the gripper; at level 3 the pre-grasp pose is at z of about 1.09 m, out of reach of an arm whose shoulder is at 0.41 m.
+
+**The front grasp works.** Real stock (28 articles on the pickable faces, 4 of them parcels; the whole warehouse has 15 parcels in 69 articles), front grasp:
+
+| Design | Gap [m] | Articles reached |
+|---|---|---|
+| facing | 0.05 / 0.10 / 0.15 / 0.25 / 0.35 | 24 / 24 / 24 / 24 / 23 of 28 |
+| along | 0.05 / 0.10 / 0.15 / 0.25 / 0.35 | 24 / 24 / 23 / 23 / 22 of 28 |
+
+The ones that were never reached are the **parcels**: 4 of 4 at every gap (and, at some gaps, a jam jar). That parcel was 0.10 x 0.07 x 0.04 m: 0.04 m high, so its centre was 0.02 m above the board while the body of the gripper is 0.06 m thick (the gripper would have touched the board); and turned by the 15 degrees of jitter it measured 0.115 m along the aisle, against an opening of 0.085 m (the first check of the sizes looked only at the smaller side). The parcel was redefined as 0.06 x 0.08 x 0.09 m (0.079 m along the aisle at 15 degrees, 4.5 cm of centre height); the check of the sizes was corrected, and the analysis repeated with the new one:
+
+| Design | Gap [m] | Articles reached (28, parcels included) |
+|---|---|---|
+| facing | 0.05 / 0.15 / 0.25 / 0.35 | 28 / 28 / **28** / 27 |
+| along | 0.05 / 0.15 / 0.25 / 0.35 | 28 / 27 / 27 / 25 |
+
+What is still missed is a jam jar (0.075 m high, just above the minimum of 0.07 m) at some gaps and, at gap 0.35 beside the shelf, a juice carton and a parcel.
+
+Envelope of all 105 pickable slots with a generic 0.17 m tall box, front grasp, robot centred on the unit:
+
+| Design | Gap [m] | Slots reached of 105 |
+|---|---|---|
+| along | 0.05 / 0.10 / 0.15-0.30 / 0.35 / 0.45 | 105 / 104 / 98 / 85 / 56 |
+| facing | 0.05 / 0.10 / 0.15 | 98 / 102 / 103 |
+| facing | **0.20 / 0.25 / 0.30 / 0.35** | **105 / 105 / 105 / 105** |
+| facing | 0.45 | 90 |
+
+With the bow towards the shelf every slot is reachable over a band of gaps (0.20-0.35 m). With the bow along the aisle the first slots of level 3 are lost at every gap above 0.10 m.
+
+**Tolerance to the arrival error** (the error of step 6 was 0.08 m on average and 0.19 m at most): facing stations with gap 0.25 and 0.30, 15 errors each: 0.10 and 0.15 m along the aisle, 0.05 and 0.10 m towards and away from the shelf, 5 degrees, and combinations.
+
+- **Levels 1 and 2: 35 of 35 in every one of the 30 cases.**
+- Level 3 is the sensitive one. Gap 0.25: from 28 to 35 of 35 (worst: an error of 0.15 m along the aisle, or 0.10 m along the aisle together with 5 degrees). Gap 0.30: from 21 to 35 of 35 (worst: 0.10 m farther from the shelf). The slots that fail are those at the end of the unit, on the side the robot has drifted from.
+- The inverse kinematics restarts from random states: the same case gave 104 and 105 of 105 on two runs, so the level 3 numbers carry a variation of one or two slots.
+
+**Chosen station:** bow towards the shelf, centred on the unit, gap 0.25 m (the middle of the band where all slots are reachable, and the one with the smaller loss under arrival errors). It is the default of `semantic_goals.py` and `nav_semantic.py` (`--along` for the other design).
+
+Station design, navigation margin (smallest platform to obstacle distance in a full turn on the spot, SDF geometry):
+
+| Station | At the pose | In a full turn |
+|---|---|---|
+| along, gap 0.25 | 0.250 m | 0.094 m |
+| facing, gap 0.25 | 0.250 m | 0.179 m |
+| facing, gap 0.30 | 0.300 m | 0.229 m |
+
+**Navigation test of the chosen station** (`nav_semantic.py --tour shelves --repeat 3`, Nav2 with the saved map): the seven shelf units three times, 21 goals, all reached, 5 recoveries (S4 once, N2 once, N1 three times), 9.6 to 18.4 s per goal on average against 5 to 10 s with the bow along the aisle (two turns per move).
+
+| Final pose against Gazebo's ground truth | mean / max / std |
+|---|---|
+| Position [m] | 0.078 / 0.122 / 0.025 |
+| Towards or away from the shelf [m] | +0.000 / 0.088 / 0.042 |
+| Along the aisle [m] | -0.048 (signed, in the frame of the goal) / 0.121 / 0.051 |
+| Yaw [deg] | 2.5 / 8.3 / 2.0 |
+| Nav2's own estimate against the truth [m] | 0.039 / 0.094 / 0.021 |
+
+The error towards the shelf stays within 0.09 m (all inside the 0.10 m of the tolerance sweep); along the aisle it reaches 0.12 m (5 goals of 21 above 0.10 m, none above 0.15 m), where the sweep keeps levels 1 and 2 complete and loses some end slots of level 3. In both rows the robot ends to the right of its heading (-5.6 cm on the south row, -3.7 cm on the north row, in the frame of the goal), so the offset is systematic rather than random. The mean position error (0.078 m) is the same as with the bow along the aisle (0.079 m); the largest is lower (0.122 against 0.163 m).
+
+### Known limits (step 7, so far)
+
+- The articles are not in the planning scene: neighbours of the article to grasp, and the article itself, are not checked as obstacles. The fingers open to 0.085 m between articles 0.20 m apart.
+- The minimum height of an article (0.07 m) is a little optimistic: a jam jar of 0.075 m is missed at some gaps.
+- The reach analysis uses the pose of every slot as the stock was generated (articles within 1 cm and 15 degrees of the nominal pose); the real position will come from the perception of step 8.
+
+- The orientation of the TCP ends 0.1-0.7 degrees off after a move: it is the stiction offset of the wrists.
+- The acceleration limit of 2 rad/s^2 is a first value, not checked against the measured torques.
+- The controller cannot stop a trajectory half way, so the action cannot be cancelled.
+- The scene is static and has no articles. The planners were not yet tried with the robot standing at a shelf station (that needs Nav2 running together with MoveIt); that scene objects are respected was shown with a test obstacle (see above).
+- MoveIt's native pose goals are not used (see above).
+
+## Step 8: perception (in progress)
+
+Done: stereo pair, stereo depth, observation poses (8.1). Still to do: synthetic dataset and recognition of the six articles (8.2), then the grasp sequence with the pose of the target from the camera (8.3).
+
+### Stereo pair and observation poses (8.1)
+
+**Cameras.** With the simulation argument `stereo:=true` two cameras are added in the housing of the wrist camera, 25 mm either side of its centre (baseline 50 mm), with the intrinsics of the RGB-D camera (320 x 240, field of view 1.2 rad, fx = 233.9 px) and a little image noise (standard deviation 0.01, assumed, not calibrated). The left one is an `rgbd_camera`, so it also gives the **true depth in its own frame**, the reference to measure the stereo depth against; the right one is a plain camera. The images are rectified by construction (pinhole, no distortion). Topics: `/stereo/left/{image,depth_image,camera_info}`, `/stereo/right/{image,camera_info}`; frames `stereo_left_optical_frame` and `stereo_right_optical_frame`. The RGB-D camera of step 4 is unchanged.
+
+**Depth.** `amr_manipulator_perception/stereo_depth_node.py` matches the two images with OpenCV's semi-global block matching (128 disparities, so the nearest depth is 0.09 m, below the 0.1 m near clip; blocks of 5 pixels; a border on the left of both images, otherwise the first 128 columns have no depth) and publishes `/stereo/depth` (32FC1, NaN where there is no match) in the left frame. **It works on demand**: it keeps the last pair and computes when `/stereo_depth/compute` (a `Trigger` service) is called, or at a low rate with the parameter `rate`.
+
+Real time factor, simulation with the warehouse and no GUI (four readings each, 4 s apart):
+
+| Configuration | Real time factor |
+|---|---|
+| No stereo | 0.98 - 1.01 |
+| Two more cameras | 0.86 - 1.03 |
+| Cameras and node on demand (idle) | 0.93 - 1.00 (0.75 in the first reading, right after the start) |
+| Cameras and node computing at the rate of the cameras (10 Hz) | **0.29 - 0.35** |
+
+The matching at 10 Hz takes so much CPU that the simulation falls to a third of real time: hence the on-demand node.
+
+**Accuracy**, measured by `scripts/stereo_check.py` against the true depth of the left camera, pixel by pixel, 5 frames. Robot at the station of shelf S3 (driven there, 0.25 m from the aisle), camera 0.38 m from the soup can of slot `S3.L2.n4`. The pixels are split by texture (local deviation of the grey image above 6 grey levels, the noise being about 2.5):
+
+| True depth, pixels with texture | Pixels with a stereo depth | Bias [mm] | Median / 95th percentile of the absolute error [mm] |
+|---|---|---|---|
+| 0.30 - 0.50 m | 98 % | +0.1 | 8.3 / 31.6 |
+| 0.50 - 1.00 m | 88 % | -66.2 | 21.2 / 557 |
+
+Below 1 m, stereo gives a depth on 86 % of the textured pixels and on 46 % of the others, where it is wrong by tens of millimetres (median 34 mm between 0.3 and 0.5 m). In the working range the median error, 8.3 mm, matches what the geometry gives: at 0.4 m a disparity error of 0.5 pixel is 6.8 mm (depth error = depth^2 x disparity error / (fx x baseline)). The bias changed from +0.1 to +8 mm between runs and is not calibrated.
+
+**Observation poses.** `moveit_check.py look --slot S3.L2.n4 --dist 0.30` puts the TCP 0.30 m in front of the centre of the article, tool horizontal into the shelf: IK seeded near that posture (a few tries each; the solver restarts from random states, so a solution can come with a joint turned by a multiple of 2 pi, and every solution is brought to the equivalent angles closest to 0 that the joint limits allow; the one with the smallest largest joint is taken) and a MoveIt joint goal. A first version rejected every joint beyond +-3.3 rad instead of normalizing it, and failed from the station with the wrist 2 at -4.2 rad, the same posture as +2.1. The camera is 0.08 m behind the TCP and looks along the tool z axis: with `--dist 0.30` it is 0.38 m from the centre of the article. From the station of S3 the arm went from the travel pose to the look pose of slot `S3.L2.n4` in 7.9 s (10 collision-free solutions found, the chosen one with a largest joint of 2.14 rad). Reach of the observation pose, bow towards the shelf, gap 0.25 m, all 105 pickable slots, with `reach_check.py --grasps look`:
+
+| TCP distance to the article centre | Camera distance | Slots of 105 |
+|---|---|---|
+| 0.15 m | 0.23 m | 105 |
+| 0.30 m | 0.38 m | 97 (the centre slots of level 1 are lost) |
+| 0.45 m | 0.53 m | 84 |
+
+### Known limits (step 8, so far)
+
+- Walls, boards and floor are plain colours, so stereo has no depth there (a real D435 has an infrared projector for this reason): the depth is to be used inside the mask of the article, where there are labels and stripes.
+- Outside the textured regions the matches are wrong: the depth must be filtered with the mask of the recognition, not used as it comes.
+- The noise of the images and the bias of the stereo depth are assumptions, not calibrated.
+- The stereo node is on demand: it gives one depth image per request, not a stream.
+- The first reading of the real time factor after the start is lower; the figures above are from runs of a few minutes, not averages over a long time.
 
 ## Roadmap
 
-- **Step 7:** MoveIt 2 with a `FollowJointTrajectory` interface on top of the arm controller.
-- **Step 8:** object perception (PyTorch / ONNX).
+- **Step 7 (rest):** the gripper in the sequence approach, grasp, retreat.
+- **Step 8 (rest):** synthetic dataset and recognition of the articles, pose of the target from the stereo depth, then the grasp sequence (first with the true pose, then with the estimated one).
 - **Step 9:** task logic with BehaviorTree.CPP.

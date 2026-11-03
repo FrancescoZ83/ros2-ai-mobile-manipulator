@@ -71,11 +71,15 @@ def generate_launch_description():
         'payload_mass',
         default_value='0.0',
         description='Test payload at the TCP [kg], simulation only')
+    stereo_arg = DeclareLaunchArgument(
+        'stereo', default_value='false',
+        description="'true' adds a stereo pair (two cameras, 50 mm baseline) in the housing of the wrist camera")
     robot_description = ParameterValue(
         Command([
             'xacro ', xacro_file,
             ' use_sim:=true',
             ' payload_mass:=', LaunchConfiguration('payload_mass'),
+            ' stereo:=', LaunchConfiguration('stereo'),
         ]),
         value_type=str)
     robot_state_publisher = Node(
@@ -147,10 +151,17 @@ def generate_launch_description():
                    '--controller-manager-timeout', '60'],
         output='screen',
     )
+    #    The FollowJointTrajectory action server (MoveIt's way to move the arm) starts with it.
+    trajectory_server = Node(
+        package='amr_manipulator_control',
+        executable='follow_joint_trajectory_server.py',
+        parameters=[{'use_sim_time': True}],
+        output='screen',
+    )
     start_gripper_after_arm = RegisterEventHandler(
         OnProcessExit(
             target_action=arm_controller_spawner,
-            on_exit=[gripper_controller_spawner],
+            on_exit=[gripper_controller_spawner, trajectory_server],
         )
     )
 
@@ -183,6 +194,7 @@ def generate_launch_description():
         yaw_arg,
         gui_arg,
         payload_arg,
+        stereo_arg,
         stow_arg,
         set_resource_path,
         gazebo,
