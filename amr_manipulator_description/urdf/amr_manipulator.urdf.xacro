@@ -10,6 +10,8 @@
   <xacro:arg name="payload_mass" default="0.0"/>
   <!-- Stereo pair in the housing of the camera (two more renderings: off by default) -->
   <xacro:arg name="stereo" default="false"/>
+  <!-- Segmentation camera at the position of the left camera: the labels of the dataset (needs a rendering more) -->
+  <xacro:arg name="dataset" default="false"/>
 
   <xacro:mobile_base/>
 
@@ -46,7 +48,9 @@
   </xacro:lidar_2d>
 
   <xacro:rgbd_camera name="camera" parent="gripper_base_link">
-    <origin xyz="0.0425 0 0.03" rpy="0 ${-pi/2} 0"/>
+    <!-- The camera looks along the tool z axis. Rolled by pi about it, so that the image is upright when the tool
+         is horizontal with its x axis up (the camera on top of the gripper): its up axis is then the tool x axis -->
+    <origin xyz="0.0425 0 0.03" rpy="${pi} ${-pi/2} 0"/>
   </xacro:rgbd_camera>
 
   <xacro:if value="$(arg stereo)">

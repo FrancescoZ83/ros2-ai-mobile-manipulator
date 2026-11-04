@@ -1,0 +1,64 @@
+<?xml version="1.0"?>
+<!-- A camera that is moved by a service (set_pose), with the sensors of the wrist camera of the robot: the left
+     camera with its true depth, the right camera of the stereo pair (50 mm baseline) and the segmentation camera
+     at the pose of the left one. The same topics as the robot: /stereo/left/..., /stereo/right/..., /segmentation/...
+     The model frame is camera_link of the robot: x forward, y left, z up. -->
+<sdf version="1.8">
+  <model name="dataset_camera">
+    <pose>0 0 1 0 0 0</pose>
+    <link name="camera_link">
+      <gravity>false</gravity>
+      <kinematic>true</kinematic>
+      <inertial>
+        <mass>0.1</mass>
+        <inertia><ixx>1e-4</ixx><iyy>1e-4</iyy><izz>1e-4</izz><ixy>0</ixy><ixz>0</ixz><iyz>0</iyz></inertia>
+      </inertial>
+
+      <sensor name="stereo_left" type="rgbd_camera">
+        <pose>0 0.025 0 0 0 0</pose>
+        <always_on>true</always_on>
+        <visualize>false</visualize>
+        <update_rate>10</update_rate>
+        <topic>/stereo/left</topic>
+        <ignition_frame_id>stereo_left_optical_frame</ignition_frame_id>
+        <camera>
+          <horizontal_fov>1.2</horizontal_fov>
+          <image><width>320</width><height>240</height><format>R8G8B8</format></image>
+          <clip><near>0.1</near><far>10.0</far></clip>
+          <noise><type>gaussian</type><mean>0.0</mean><stddev>0.01</stddev></noise>
+          <depth_camera><clip><near>0.1</near><far>10.0</far></clip></depth_camera>
+        </camera>
+      </sensor>
+
+      <sensor name="stereo_right" type="camera">
+        <pose>0 -0.025 0 0 0 0</pose>
+        <always_on>true</always_on>
+        <visualize>false</visualize>
+        <update_rate>10</update_rate>
+        <topic>/stereo/right/image</topic>
+        <ignition_frame_id>stereo_right_optical_frame</ignition_frame_id>
+        <camera>
+          <horizontal_fov>1.2</horizontal_fov>
+          <image><width>320</width><height>240</height><format>R8G8B8</format></image>
+          <clip><near>0.1</near><far>10.0</far></clip>
+          <noise><type>gaussian</type><mean>0.0</mean><stddev>0.01</stddev></noise>
+        </camera>
+      </sensor>
+
+      <sensor name="segmentation" type="segmentation">
+        <pose>0 0.025 0 0 0 0</pose>
+        <always_on>true</always_on>
+        <visualize>false</visualize>
+        <update_rate>10</update_rate>
+        <topic>/segmentation</topic>
+        <ignition_frame_id>stereo_left_optical_frame</ignition_frame_id>
+        <camera>
+          <segmentation_type>semantic</segmentation_type>
+          <horizontal_fov>1.2</horizontal_fov>
+          <image><width>320</width><height>240</height></image>
+          <clip><near>0.1</near><far>10.0</far></clip>
+        </camera>
+      </sensor>
+    </link>
+  </model>
+</sdf>

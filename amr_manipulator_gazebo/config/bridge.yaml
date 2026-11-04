@@ -93,6 +93,19 @@
   gz_type_name: "ignition.msgs.CameraInfo"
   direction: GZ_TO_ROS
 
+# Segmentation camera of the dataset (only with dataset:=true): class of every pixel
+- ros_topic_name: "/segmentation/labels_map"
+  gz_topic_name: "/segmentation/labels_map"
+  ros_type_name: "sensor_msgs/msg/Image"
+  gz_type_name: "ignition.msgs.Image"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "/segmentation/colored_map"
+  gz_topic_name: "/segmentation/colored_map"
+  ros_type_name: "sensor_msgs/msg/Image"
+  gz_type_name: "ignition.msgs.Image"
+  direction: GZ_TO_ROS
+
 # Point cloud: disabled for now. At 320x240 it is about 1.2 MB per message and costs a lot of
 # CPU in the bridge. Enable it when perception needs it.
 # - ros_topic_name: "/camera/points"

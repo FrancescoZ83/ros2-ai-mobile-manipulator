@@ -74,12 +74,16 @@ def generate_launch_description():
     stereo_arg = DeclareLaunchArgument(
         'stereo', default_value='false',
         description="'true' adds a stereo pair (two cameras, 50 mm baseline) in the housing of the wrist camera")
+    dataset_arg = DeclareLaunchArgument(
+        'dataset', default_value='false',
+        description="'true' adds a segmentation camera at the pose of the left stereo camera (labels for the dataset)")
     robot_description = ParameterValue(
         Command([
             'xacro ', xacro_file,
             ' use_sim:=true',
             ' payload_mass:=', LaunchConfiguration('payload_mass'),
             ' stereo:=', LaunchConfiguration('stereo'),
+            ' dataset:=', LaunchConfiguration('dataset'),
         ]),
         value_type=str)
     robot_state_publisher = Node(
@@ -195,6 +199,7 @@ def generate_launch_description():
         gui_arg,
         payload_arg,
         stereo_arg,
+        dataset_arg,
         stow_arg,
         set_resource_path,
         gazebo,

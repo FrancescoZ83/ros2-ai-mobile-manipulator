@@ -145,7 +145,7 @@ private:
   Trajectory traj_;                  // followed by the control thread
   bool traj_active_{false};
   std::size_t traj_seg_{0};          // segment [seg, seg + 1] containing the current time
-  double traj_start_tol_{0.05};      // [rad] a trajectory must start this close to where the arm is
+  double traj_start_tol_{0.05};      // [rad] a trajectory must start this close to the last goal or to the arm
   std::atomic<bool> traj_start_rejected_{false};
   std::vector<double> ref_qdd_;      // reference acceleration, as ref_q_ and ref_qd_
   rclcpp::Subscription<trajectory_msgs::msg::JointTrajectory>::SharedPtr traj_sub_;

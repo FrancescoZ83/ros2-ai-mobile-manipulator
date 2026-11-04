@@ -506,7 +506,8 @@ void ArmModelController::publish_debug()
   // Warnings are raised here, not in the control loop
   if (traj_start_rejected_.exchange(false)) {
     RCLCPP_WARN(get_node()->get_logger(),
-      "Trajectory ignored: its first point is more than %.3f rad from where the arm is", traj_start_tol_);
+      "Trajectory ignored: its first point is more than %.3f rad from the last goal and from where the arm is",
+      traj_start_tol_);
   }
   Float64MultiArray msg;
   Float64MultiArray payload_msg;
@@ -602,18 +603,26 @@ controller_interface::return_type ArmModelController::update(
     traj_active_ = false;
   }
 
-  // 0c. When idle, a pending trajectory is taken before a pending goal. It must start where
-  //     the reference is (the goal of the last move), otherwise it is dropped.
+  // 0c. When idle, a pending trajectory is taken before a pending goal. It must start where the
+  //     reference is (the goal of the last move) or where the arm is, otherwise it is dropped.
+  //     MoveIt plans from the measured state, so if the arm stopped away from the last goal (blocked,
+  //     or short of it by friction) the first point is near the arm and far from the goal: refusing it
+  //     would refuse every trajectory for ever, because a held arm that cannot reach the goal never
+  //     gets there. Starting from the measured pose is smooth for the arm.
   if (!traj_active_ && t_ >= traj_time_) {
     std::unique_lock<std::mutex> lock(traj_mutex_, std::try_to_lock);
     if (lock.owns_lock() && traj_pending_) {
       traj_pending_ = false;
       std::swap(traj_, pending_traj_);
-      double worst = 0.0;
+      double worst = 0.0;           // from the reference (the goal of the last move)
+      double worst_arm = filter_primed_ ? 0.0 : traj_start_tol_ + 1.0;   // from the arm: q_ is valid after the first cycle
       for (std::size_t i = 0; i < n; ++i) {
         worst = std::max(worst, std::abs(traj_.p[i] - q_goal_[i]));
+        if (filter_primed_) {
+          worst_arm = std::max(worst_arm, std::abs(traj_.p[i] - q_(i)));
+        }
       }
-      if (worst <= traj_start_tol_) {
+      if (worst <= traj_start_tol_ || worst_arm <= traj_start_tol_) {
         traj_active_ = true;
         traj_seg_ = 0;
         traj_time_ = traj_.t.back();

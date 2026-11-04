@@ -137,4 +137,26 @@
     </gazebo>
   </xacro:if>
 
+  <!-- Block 6: segmentation camera for the dataset (only with dataset:=true), at the pose of the left camera of the
+       stereo pair, with the same intrinsics: every pixel gets the label of the article seen (0 = background).
+       Topics /segmentation/labels_map and /segmentation/colored_map. -->
+  <xacro:if value="$(arg dataset)">
+    <gazebo reference="camera_link">
+      <sensor name="segmentation" type="segmentation">
+        <pose>0 0.025 0 0 0 0</pose>
+        <always_on>true</always_on>
+        <visualize>false</visualize>
+        <update_rate>10</update_rate>
+        <topic>/segmentation</topic>
+        <ignition_frame_id>stereo_left_optical_frame</ignition_frame_id>
+        <camera>
+          <segmentation_type>semantic</segmentation_type>
+          <horizontal_fov>1.2</horizontal_fov>
+          <image><width>320</width><height>240</height></image>
+          <clip><near>0.1</near><far>10.0</far></clip>
+        </camera>
+      </sensor>
+    </gazebo>
+  </xacro:if>
+
 </robot>

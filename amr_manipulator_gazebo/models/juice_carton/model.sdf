@@ -32,5 +32,9 @@
         </material>
       </visual>
     </link>
+    <!-- Class id seen by the segmentation camera of the dataset (see the simulation argument dataset) -->
+    <plugin filename="ignition-gazebo-label-system" name="ignition::gazebo::systems::Label">
+      <label>2</label>
+    </plugin>
   </model>
 </sdf>

@@ -21,6 +21,7 @@ limits:
 #   noise  standard deviation of the gaussian pixel noise (0-255 scale)
 articles:
   - name: cereal_box
+    label: 1          # class id in the segmentation images (0 = background)
     shape: box
     size: [0.070, 0.050, 0.160]        # x, y, z
     mass: 0.25
@@ -33,6 +34,7 @@ articles:
       noise: 6
 
   - name: juice_carton
+    label: 2          # class id in the segmentation images (0 = background)
     shape: box
     size: [0.060, 0.060, 0.170]
     mass: 0.35
@@ -45,6 +47,7 @@ articles:
       noise: 6
 
   - name: soup_can
+    label: 3          # class id in the segmentation images (0 = background)
     shape: cylinder
     size: [0.033, 0.100]               # radius, height
     mass: 0.40
@@ -57,6 +60,7 @@ articles:
       noise: 5
 
   - name: water_bottle
+    label: 4          # class id in the segmentation images (0 = background)
     shape: cylinder
     size: [0.030, 0.180]
     mass: 0.30
@@ -69,6 +73,7 @@ articles:
       noise: 4
 
   - name: parcel
+    label: 5          # class id in the segmentation images (0 = background)
     shape: box
     size: [0.060, 0.080, 0.090]
     mass: 0.15
@@ -82,6 +87,7 @@ articles:
       noise: 8
 
   - name: jam_jar
+    label: 6          # class id in the segmentation images (0 = background)
     shape: cylinder
     size: [0.035, 0.075]
     mass: 0.30

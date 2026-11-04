@@ -1,3 +1,8 @@
 amr_manipulator_description/urdf/arm/ur_macro_old.xacro
 scripts/__pycache__/
 *.pyc
+# Generated dataset (hundreds of MB): never committed
+dataset/
+# Trained networks and their logs (kept out of the repository)
+amr_manipulator_perception/segmentation/runs/
+dataset_robot/

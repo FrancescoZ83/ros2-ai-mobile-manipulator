@@ -16,7 +16,7 @@ The project is a learning exercise: every file is written by hand, and each step
 | 5 | Warehouse world and semantic map | done |
 | 6 | slam_toolbox + Nav2 | done: travel pose, mapping, map check, navigation through the doors, goals taken from the semantic map |
 | 7 | MoveIt 2 (inverse kinematics, planning, collisions) | in progress: trajectory interface, MoveIt configuration, planning scene, reach analysis and the station design done; the gripper sequence is next |
-| 8 | Perception (PyTorch / ONNX) | in progress: stereo pair and depth, observation poses done; dataset and recognition next |
+| 8 | Perception (PyTorch / ONNX) | in progress: stereo pair and depth, observation poses, dataset and recognition network done (mean IoU 0.994 on the test split, 0.960 on 36 images of the robot's camera); pose of the target and the grasp next |
 | 9 | Task logic with BehaviorTree.CPP | planned |
 
 ## Stack
@@ -98,8 +98,12 @@ python3 scripts/reach_check.py --generic --grasps front --orientations facing --
 # Stereo pair (simulation started with stereo:=true): put the camera in front of a slot, then measure the stereo depth
 python3 scripts/moveit_check.py look --slot S3.L2.n4 [--dist 0.30]
 python3 scripts/stereo_check.py --frames 5 --save /tmp/sc
+# Labels of the segmentation camera (simulation with stereo:=true dataset:=true): classes seen and overlay
+python3 scripts/label_probe.py --save /tmp/lp
 # A multi-point trajectory through the FollowJointTrajectory action, with the tracking error
 python3 scripts/traj_test.py --goal 0 -1.5708 1.5708 -1.5708 -1.5708 1.5708 --time 6 [--shape via]
+# A trajectory that starts where the arm is, not at its last goal, must run (gravity compensation switched off to hold the arm away)
+python3 scripts/traj_recovery_test.py
 ```
 
 MoveIt, with the simulation running (the planning scene of the warehouse is loaded by the launch):
@@ -399,7 +403,7 @@ Done: trajectory interface of the arm controller (7.1), MoveIt configuration (7.
 
 MoveIt executes through a `FollowJointTrajectory` action; the arm controller only had its point-to-point `~/goal`. Now:
 
-- **`ArmModelController`** takes a `JointTrajectory` on `~/trajectory`. Between two consecutive points it uses the quintic through their position, velocity and acceleration (MoveIt's time parameterization gives all three), and feeds them to the computed torque as the reference. A trajectory needs at least 2 points, all three quantities on every point, increasing times and speeds below the limit of the controller (+10 %); it starts only when the arm is idle and its first point is within 0.05 rad of the reference. `~/goal` works as before.
+- **`ArmModelController`** takes a `JointTrajectory` on `~/trajectory`. Between two consecutive points it uses the quintic through their position, velocity and acceleration (MoveIt's time parameterization gives all three), and feeds them to the computed torque as the reference. A trajectory needs at least 2 points, all three quantities on every point, increasing times and speeds below the limit of the controller (+10 %); it starts only when the arm is idle and its first point is within 0.05 rad of the reference (the goal of the last move) or of the measured pose of the arm. The second condition matters: MoveIt plans from the measured state, so an arm held away from its last goal (blocked, or stopped short by friction) used to get every later trajectory refused, for ever, because it could not reach a goal it was pushing against. `~/goal` works as before.
 - **`follow_joint_trajectory_server.py`** (started with the simulation) forwards the trajectory, waits for its end, checks the final error (0.03 rad if the goal gives no tolerance) and answers. A cancel is rejected: the controller cannot stop a trajectory half way.
 
 Same move (travel to home90, 6 s) with `arm_goto.py` and through the action, largest tracking error [rad]:
@@ -515,6 +519,7 @@ The error towards the shelf stays within 0.09 m (all inside the 0.10 m of the to
 
 ### Known limits (step 7, so far)
 
+- **The arm stopped following trajectories twice** while `make_dataset.py` photographed the shelves with the robot (21 and 36 images into two runs): the first error was `ur_wrist_3_joint ended 0.7893 rad from the goal` in one run and `ur_wrist_1_joint ended 0.0346 rad` in the other, then every trajectory was refused. The refusal is explained and fixed (the controller compared the first point with the last goal, not with the arm; `scripts/traj_recovery_test.py` fails with the old condition, the arm 0.057 rad from its goal, and passes with the new one; the tracking test is unchanged, 0.006 rad at most). **What caused the first error is not known**: three later runs (about 25 look poses with and without fillings, and a full run of 64 images, logged at 50 Hz) did not reproduce it; the error at rest was at most 0.020 rad (wrist 3, the weakest joint) and in motion 0.027. A contact that MoveIt does not see is a guess, not a result. The real time factor drops to 0.04-0.2 for a few seconds around the fillings (median 0.78), and the action server waits in wall-clock time.
 - The articles are not in the planning scene: neighbours of the article to grasp, and the article itself, are not checked as obstacles. The fingers open to 0.085 m between articles 0.20 m apart.
 - The minimum height of an article (0.07 m) is a little optimistic: a jam jar of 0.075 m is missed at some gaps.
 - The reach analysis uses the pose of every slot as the stock was generated (articles within 1 cm and 15 degrees of the nominal pose); the real position will come from the perception of step 8.
@@ -527,11 +532,11 @@ The error towards the shelf stays within 0.09 m (all inside the 0.10 m of the to
 
 ## Step 8: perception (in progress)
 
-Done: stereo pair, stereo depth, observation poses (8.1). Still to do: synthetic dataset and recognition of the six articles (8.2), then the grasp sequence with the pose of the target from the camera (8.3).
+Done: stereo pair, stereo depth, observation poses (8.1), labels from the simulator, the synthetic dataset of 3990 images and the recognition network for the six articles (8.2). Still to do: the pose of the target from the mask and the stereo depth, then the grasp sequence (8.3).
 
 ### Stereo pair and observation poses (8.1)
 
-**Cameras.** With the simulation argument `stereo:=true` two cameras are added in the housing of the wrist camera, 25 mm either side of its centre (baseline 50 mm), with the intrinsics of the RGB-D camera (320 x 240, field of view 1.2 rad, fx = 233.9 px) and a little image noise (standard deviation 0.01, assumed, not calibrated). The left one is an `rgbd_camera`, so it also gives the **true depth in its own frame**, the reference to measure the stereo depth against; the right one is a plain camera. The images are rectified by construction (pinhole, no distortion). Topics: `/stereo/left/{image,depth_image,camera_info}`, `/stereo/right/{image,camera_info}`; frames `stereo_left_optical_frame` and `stereo_right_optical_frame`. The RGB-D camera of step 4 is unchanged.
+**Cameras.** With the simulation argument `stereo:=true` two cameras are added in the housing of the wrist camera, 25 mm either side of its centre (baseline 50 mm), with the intrinsics of the RGB-D camera (320 x 240, field of view 1.2 rad, fx = 233.9 px) and a little image noise (standard deviation 0.01, assumed, not calibrated). The left one is an `rgbd_camera`, so it also gives the **true depth in its own frame**, the reference to measure the stereo depth against; the right one is a plain camera. The images are rectified by construction (pinhole, no distortion). Topics: `/stereo/left/{image,depth_image,camera_info}`, `/stereo/right/{image,camera_info}`; frames `stereo_left_optical_frame` and `stereo_right_optical_frame`. The RGB-D camera of step 4 is unchanged, apart from its mounting: it is rolled by 180 degrees about its optical axis (`rpy` of `camera_joint`), because its up axis is the x axis of the tool with a sign that left the images upside down when the tool is horizontal with its x axis up, the pose used to look at a shelf (the camera sits on top of the gripper). Checked by computing the image axes in that pose: before the roll the image down axis pointed up in the world, now it points down; and on the images of the simulation.
 
 **Depth.** `amr_manipulator_perception/stereo_depth_node.py` matches the two images with OpenCV's semi-global block matching (128 disparities, so the nearest depth is 0.09 m, below the 0.1 m near clip; blocks of 5 pixels; a border on the left of both images, otherwise the first 128 columns have no depth) and publishes `/stereo/depth` (32FC1, NaN where there is no match) in the left frame. **It works on demand**: it keeps the last pair and computes when `/stereo_depth/compute` (a `Trigger` service) is called, or at a low rate with the parameter `rate`.
 
@@ -563,16 +568,86 @@ Below 1 m, stereo gives a depth on 86 % of the textured pixels and on 46 % of th
 | 0.30 m | 0.38 m | 97 (the centre slots of level 1 are lost) |
 | 0.45 m | 0.53 m | 84 |
 
+### Dataset (8.2)
+
+The network is built from scratch, as a learning exercise (no pretrained models); its pose output is not learned: the pose of an article comes from the mask, the stereo depth and the known shape of the article.
+
+**Labels.** Gazebo's segmentation camera gives the class of every pixel. Every article model carries a `Label` plugin with the class id (`label` in `articles.yaml`: cereal_box 1, juice_carton 2, soup_can 3, water_bottle 4, parcel 5, jam_jar 6; 0 is the background), written by `make_articles.py`. With the simulation argument `dataset:=true` a segmentation camera is added at the pose of the left camera of the stereo pair, with the same intrinsics, so the labels are aligned with the left image. Topics `/segmentation/labels_map` and `/segmentation/colored_map` (the label is in the first channel of an `rgb8` image). Checked with `scripts/label_probe.py` from the station of S3, looking at `S3.L2.n4`: three classes found in the view (cereal_box, soup_can, jam_jar), the masks follow the outline of the articles, even on the white body of the soup can that has little contrast against the board. The real time factor with the segmentation camera and the stereo pair was 0.96.
+
+**Filling the shelves at random.** One stock of 69 articles would be learned by heart, so the articles are created and removed in the running simulation (`scripts/stocker.py`, Gazebo's `create` and `remove` services, static articles). A call takes 0.34-0.37 s; 20 calls in parallel take about 2.4 s whether 4, 8 or 16 go at the same time (the queue is in the server), and the 20 articles were all really in the world. On the images: a parcel created on an empty slot appears with class 5 (about 3100 pixels), one created outside the field of view does not appear, and after the removal the labels are the same as before.
+
+**Generator.** `scripts/make_dataset.py` works in the running simulation (`stereo:=true dataset:=true`, Nav2, `move_group`). It removes the 69 articles of the warehouse (restart the simulation to get them back), then, for every shelf unit: Nav2 takes the robot to its station (the arrival error of 5-12 cm is a variation the dataset should have), the arm goes to a look pose (a random slot of the pick face, a TCP distance of 0.15-0.40 m, a random offset of up to 3 cm; a target out of reach is replaced by another, up to 4 times), and for every look pose several random fillings are photographed: each slot of the row within 0.4 m of the camera, on both faces and all levels, is filled with a probability drawn between 0.2 and 0.9, with a random class (uniform over the six), a yaw of up to 15 degrees and a shift of up to 1 cm. Per sample it saves `images/NNNNNN.png` (left image), `labels/NNNNNN.png` (class id per pixel) and `meta/NNNNNN.json` (look pose, fill, camera pose in the map at the time of the frame, every article created with its class, slot and pose in the map, pixels per class). **The split is by look pose, not by image** (70, 15 and 15 percent, decided by a hash of the pose id): all the images of a pose go to the same split, so validation and test never contain a camera pose seen in training. `scripts/dataset_sheet.py` makes a contact sheet of a split, with the labels painted over the images. The dataset is written in `dataset/`, which is ignored by git.
+
+Two defects of the first version were found by looking at the images and the metadata, not by the code: 4 images of 6 had no articles although 12 to 22 had been created, and the pose of the camera of one look pose changed from 0.712 to 0.424 m between images. The node that grabs the frames uses the simulation time, which moves only while the node spins, so the frames queued before the filling were accepted as new; and the pose of the camera was read as the latest transform of a buffer that was behind. Now the node spins for a second, takes the newest stamp as reference and accepts only a later frame, and the pose is read at the time of the frame. The same short test (two shelf units, 2 look poses and 3 fillings each) then gave 12 images, no failure, and 11 of them with articles in view.
+
+Time: about 10 s per image in that short test, which includes the removal of the original articles, the navigation and the look poses (a filling costs about 5 s: 20 articles are created in about 2.4 s, the same to remove them). For the first target of 3000 images for training and 500 each for validation and test (4000 in all) this is of the order of 8 hours; it is an estimate, to be checked on a first batch.
+
+**A camera without the robot.** The robot is what makes the generator slow: the navigation, the planning and 8 s to move the arm for every look pose. The images do not need the robot, only a camera with the same sensors: `models/dataset_camera` is a free camera (a kinematic model, no gravity) with the left camera and its true depth, the right camera and the segmentation camera, with the same topics and the same intrinsics as the robot; `launch/dataset.launch.py` starts the warehouse, that camera and the bridge, nothing else (no robot, controllers, Nav2 or MoveIt), and `stocker.set_pose` moves the camera with a service of the world. The gripper is not modelled on the camera. That was a mistake: the camera is 0.08 m behind the tool point and the fingers end 0.09 m in front of it, that is 0.17 m from the camera, beyond the near clip of 0.1 m, and every image of the robot has a fixed light shape in the bottom-left corner, most likely a part of the gripper (see the test with the robot below). The images of the free camera do not have it.
+
+**Generator without the robot.** `scripts/make_dataset_free.py` (the code shared with `make_dataset.py` is in `scripts/dataset_common.py`). Start `ros2 launch amr_manipulator_gazebo dataset.launch.py`, then run the script with `--out dataset`. An *arrangement* is a random filling of one row (S or N) around a random centre, with the rules above (half width 0.7 m, fill drawn between 0.2 and 0.9, uniform classes, yaw up to 15 degrees, shift up to 1 cm); each arrangement is photographed 20 times (`--shots`). The camera looks at the picking face of the row, perpendicular to it, aiming at a random slot near the centre of the arrangement: 0.23-0.53 m from the slot (the TCP distance of the arm, 0.15-0.40 m, plus the 0.08 m of the camera), at the height of a shelf level (0.3, 0.6 or 0.9 m plus 0.085 m, to the centre of an article, plus or minus 5 cm), with a random error of up to 1 degree of roll, 2 of pitch and 6 of yaw, which is about what the arm does. **The split is by arrangement** (70, 15 and 15 percent, decided by a hash of the id): the validation and test images show fillings that the network has never seen, from any pose. The metadata give the true pose of the camera (the commanded one, `camera_in_map`), the articles created with class, slot and pose, and the pixels per class.
+
+Measured on a first small batch (12 arrangements, 5 shots each): 60 images in 121 s, **2.0 s per image** (this includes the removal of the original articles and a filling every 5 images), no failure, 8, 3 and 1 arrangements in train, validation and test (40, 15 and 5 images), every class present in the training and validation images (the test split, one arrangement of 5 images, has no parcel: with so few arrangements it can happen, and it is to be checked on the statistics of the full dataset), the background 90 percent of the pixels in the training images. The first image after each filling, which is the one that can be taken too early, had its articles in all 12 cases, and the painted labels coincide with the articles in the images. **A first full run that was wrong, and what it taught.** The first run of 200 arrangements of 20 shots was stopped after 5979 s: the real time factor fell from 1.0 to 0.14, the time per image grew from 0.9 s to 3.4 s and the `set_pose` calls timed out (948 shots lost). Of its 1711 images, 765 had labels of classes that their arrangement had not created (from image 289 on, 174 of 200 around image 1300), and an arrangement that should have created about 30 articles created 7: articles of earlier arrangements were left in the world, and a validation image could show articles of a training arrangement. That dataset was deleted. A test of 15 cycles of 30 creations and 30 removals then showed that **the answers of the `create` and `remove` services cannot be trusted** (from cycle 9, up to 5 of 30 removals were answered as failed) **while the scene of the world is always right** (the 30 articles there, then none). So the generator now reads the scene (`/world/amr_world/scene/info`, 0.33 s) after every removal and filling, repeats what is missing, and drops the arrangement with an error if the world cannot be put right; the images of an arrangement are kept in memory and saved only if the scene at the end still holds exactly the articles of the metadata, and a label of a class that was not created is an error. The generator leaves with code 75 when the world is too slow (real time factor below 0.6) or cannot be put right, and `scripts/generate_dataset.sh` then restarts the world and goes on, in batches, until the number of arrangements is reached.
+
+**The dataset (generated).** 200 arrangements, 7 batches of the script, 3990 images of 320 x 240 (4000 minus 10 shots lost because the camera could not be moved), 253 MB, 7927 s of generation (2.0 s per image, the restarts of the world not included). Six batches were ended by the generator itself, between the 22nd and the 35th arrangement, because the scene of the world could no longer be read; no arrangement was saved in a bad world. The time per image still grows inside a batch (from about 1.1 s to 1.9 s) although the scene is right, so the leftover articles were not the only cause of the slowdown; what grows is not known (it may be the cost of creating and removing entities in Gazebo) and the restart is a workaround, not a cure.
+
+| split | arrangements | images | images without articles |
+|---|---|---|---|
+| train | 134 | 2675 | 80 |
+| validation | 33 | 657 | 21 |
+| test | 33 | 658 | 16 |
+
+Checks on the files (read-only scripts, not in the repository): every image has its label and metadata, no orphan or corrupt file, no duplicate image, no label of a class that the arrangement did not create. Every class is in every split (train: cereal_box in 1464 images, juice_carton 1529, soup_can 1423, water_bottle 1289, parcel 1483, jam_jar 1270). The background is 91 percent of the pixels in train and validation and 90 percent in test; the rarest class in train is the jam jar (0.81 percent of the pixels), the others are between 1.16 and 2.2 percent. The split by images is 67, 16 and 16 percent, because it is by arrangement. `make_dataset.py` was used to take a few images with the real camera of the robot, to test the network on a view it has not been trained on (below).
+
+
+### Recognition network (8.2)
+
+`amr_manipulator_perception/segmentation/`: a U-Net written from scratch in PyTorch (`model.py`), without pretrained weights. A block (`ConvBlock`) is two 3x3 convolutions, each followed by BatchNorm and ReLU; the network has four downsamplings (max-pooling and a block) and four upsamplings (transposed convolution, concatenation with the skip connection of the same size, a block), and a 1x1 convolution that gives the scores of the 7 classes (background and the six articles) for every pixel. Widths 16, 32, 64, 128 and 256, 1.94 million parameters, input 240 x 320. `check_model.py` checks the shapes of every block, `sanity.py` checks the whole chain on 8 fixed images (loss from 2.22 to 0.10 in 300 steps, mean IoU 0.990 on them).
+
+`train.py`: cross entropy without class weights, Adam with a learning rate of 1e-3 and a cosine decay, batches of 8, 30 epochs of 39 s each (1168 s) on the 4 GB GPU of the laptop. The augmentation is applied to the training images only: a shift of up to 16 x 12 px (the same for image and labels, nearest neighbour for the labels), contrast, brightness, a little blur and noise. The network kept is the one with the highest mean IoU on the validation split (epoch 29). The measure is the IoU of every class (`metrics.py`), not the accuracy of the pixels: answering "background" everywhere is right on 91 percent of them.
+
+Test split (658 images, never used before the end):
+
+| class | IoU |
+|---|---|
+| background | 1.000 |
+| cereal_box | 0.997 |
+| juice_carton | 0.992 |
+| soup_can | 0.986 |
+| water_bottle | 0.996 |
+| parcel | 0.995 |
+| jam_jar | 0.992 |
+| **mean** | **0.994** |
+
+The validation mean is 0.995. In thirds of the camera distance the mean IoU is 0.992, 0.996 and 0.994: the far shots, where the articles are a few pixels wide, are not worse.
+
+**Test with the robot.** The same network on 36 images taken with the real camera of the robot (`scripts/robot_testset.sh`: Nav2 to the station, the arm to a look pose, random fillings, as `make_dataset.py` does): mean IoU **0.960**.
+
+| class | IoU | IoU without the pixels under the shape |
+|---|---|---|
+| background | 0.996 | 0.998 |
+| cereal_box | 0.994 | 0.994 |
+| juice_carton | 0.971 | 0.997 |
+| soup_can | 0.841 | 0.897 |
+| water_bottle | 0.996 | 0.998 |
+| parcel | 0.955 | 0.992 |
+| jam_jar | 0.969 | 0.969 |
+| **mean** | **0.960** | **0.978** |
+
+The shape is the one of the gripper in the corner: rows 204 to 239 and columns 52 to 114 of the image (2.2 percent of it), the same in every image. The segmentation camera does not see it, so the labels mark the articles behind it (2.4 percent of the article pixels, 12 of the 36 images) while the image shows the shape: the network answers background there, which is right for the image, and the labels count it as an error. The brightness of the images is the same as in the dataset (mean 97-99 against 92). The weakest class is the soup can, whose body is white or grey against a grey background and whose mask is often partial. The network was not trained again for the shape. A first attempt at this test was made by mistake in the empty world (the default of `sim.launch.py`) and was discarded; the script now passes `world:=warehouse.sdf`.
+
 ### Known limits (step 8, so far)
 
 - Walls, boards and floor are plain colours, so stereo has no depth there (a real D435 has an infrared projector for this reason): the depth is to be used inside the mask of the article, where there are labels and stripes.
 - Outside the textured regions the matches are wrong: the depth must be filtered with the mask of the recognition, not used as it comes.
 - The noise of the images and the bias of the stereo depth are assumptions, not calibrated.
+- The labels mark some articles that the image does not show, hidden by a light surface: 0.15 percent of the article pixels in the test split (a count of the pixels on near-white surfaces, so a lower bound) and 2.4 percent in the robot images, behind the shape. The cause was not investigated.
+- The test with the robot has 36 images, a small sample; the figure is an indication, not a guarantee.
+- Training, validation and test come from the same warehouse: they differ by arrangement and pose, not by shelves, walls or lighting. The test measures the recognition of unseen fillings, not of another environment.
 - The stereo node is on demand: it gives one depth image per request, not a stream.
 - The first reading of the real time factor after the start is lower; the figures above are from runs of a few minutes, not averages over a long time.
 
 ## Roadmap
 
 - **Step 7 (rest):** the gripper in the sequence approach, grasp, retreat.
-- **Step 8 (rest):** synthetic dataset and recognition of the articles, pose of the target from the stereo depth, then the grasp sequence (first with the true pose, then with the estimated one).
+- **Step 8 (rest):** pose of the target from the mask of the network and the stereo depth, then the grasp sequence (first with the true pose, then with the estimated one).
 - **Step 9:** task logic with BehaviorTree.CPP.

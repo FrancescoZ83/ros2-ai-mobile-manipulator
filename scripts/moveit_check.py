@@ -319,6 +319,26 @@ def normalised(q):
     return out
 
 
+def look_solution(node, center, normal, dist, offset=(0.0, 0.0, 0.0), tries=5):
+    """Joint values that put the TCP `dist` in front of `center` (map frame), tool horizontal into the shelf whose
+    pick face has the outward normal `normal`; `offset` moves the TCP target. None if there is no collision-free one.
+
+    The IK restarts from random states when the seed is far from a solution, so it may return another branch,
+    or the same posture with a joint turned by 2 pi. So: seeds near the posture of the observation, a few tries
+    each, every solution brought to its equivalent joint angles closest to 0, and the one with the smallest
+    largest joint is taken."""
+    approach, rot = grasp_axes('front', normal, 0.0, 'x')
+    target = tuple(c - dist * a + o for c, a, o in zip(center, approach, offset))
+    seeds = [[0.0, -1.2, 1.6, -2.0, -1.5708, 1.5708], [0.0, -1.5708, 1.5708, -1.5708, -1.5708, 1.5708]]
+    candidates = []
+    for seed in seeds:
+        for _ in range(tries):
+            cand, _ = node.inverse(target, matrix_to_quat(rot), seed, timeout=0.5, avoid_collisions=True, frame='map')
+            if cand is not None:
+                candidates.append(normalised(cand))
+    return min(candidates, key=lambda q: max(abs(v) for v in q)) if candidates else None
+
+
 def do_look(node, args):
     """Put the camera in front of a slot, tool horizontal into the shelf: IK from the current joints, then a joint goal."""
     sem = sg.load(args.map)
@@ -327,26 +347,13 @@ def do_look(node, args):
         raise SystemExit(f'unknown slot {args.slot}, for example S3.L2.n3')
     article = article_table(args.articles).get(slot['article'], {'height': 0.17})
     center = (slot['pose'][0], slot['pose'][1], slot['pose'][2] + article['height'] / 2.0)
-    approach, rot = grasp_axes('front', sg.NORMALS[slot['face']], 0.0, 'x')
-    target = tuple(c - args.dist * a for c, a in zip(center, approach))
-    print(f"slot {args.slot} ({slot['article']}), centre ({center[0]:+.3f}, {center[1]:+.3f}, {center[2]:+.3f}); TCP to "
-          f'({target[0]:+.3f}, {target[1]:+.3f}, {target[2]:+.3f}), the camera is about {args.dist + 0.08:.2f} m from the centre')
-    # The IK restarts from random states when the seed is far from a solution, so it may return another
-    # branch, or the same posture with a joint turned by 2 pi. So: seeds near the posture of the observation,
-    # a few tries each, every solution brought to its equivalent joint angles closest to 0, and the one with
-    # the smallest largest joint is taken.
-    seeds = [[0.0, -1.2, 1.6, -2.0, -1.5708, 1.5708], [0.0, -1.5708, 1.5708, -1.5708, -1.5708, 1.5708]]
-    candidates = []
-    for seed in seeds:
-        for _ in range(5):
-            cand, _ = node.inverse(target, matrix_to_quat(rot), seed, timeout=0.5, avoid_collisions=True, frame='map')
-            if cand is not None:
-                candidates.append(normalised(cand))
-    if not candidates:
+    print(f"slot {args.slot} ({slot['article']}), centre ({center[0]:+.3f}, {center[1]:+.3f}, {center[2]:+.3f}); the TCP "
+          f'{args.dist:.2f} m in front of it, the camera is about {args.dist + 0.08:.2f} m from the centre')
+    sol = look_solution(node, center, sg.NORMALS[slot['face']], args.dist)
+    if sol is None:
         print('IK: no collision-free solution')
         return False
-    sol = min(candidates, key=lambda q: max(abs(v) for v in q))
-    print(f'IK: {len(candidates)} collision-free solutions, the most comfortable one (largest joint {max(abs(v) for v in sol):.2f} rad):',
+    print(f'IK: the most comfortable collision-free solution (largest joint {max(abs(v) for v in sol):.2f} rad):',
           [round(v, 3) for v in sol])
     res, seconds = node.execute(joint_constraints(sol), args.scale)
     return report_result(res, seconds)

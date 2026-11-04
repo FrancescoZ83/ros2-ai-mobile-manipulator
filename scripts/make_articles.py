@@ -67,6 +67,8 @@ def check_limits(art, limits):
                          f"({limits['gripper_opening'] * 1000:.0f} mm)")
     if height > limits['max_height']:
         raise ValueError(f"{art['name']}: height {height} m is above {limits['max_height']} m")
+    if not isinstance(art.get('label'), int) or art['label'] < 1:
+        raise ValueError(f"{art['name']}: needs an integer label >= 1 (0 is the background of the segmentation)")
     if height < limits['min_height']:
         raise ValueError(f"{art['name']}: height {height} m is below {limits['min_height']} m: the body of the "
                          f"gripper would touch the shelf")
@@ -109,6 +111,10 @@ def model_sdf(art):
         </material>
       </visual>
     </link>
+    <!-- Class id seen by the segmentation camera of the dataset (see the simulation argument dataset) -->
+    <plugin filename="ignition-gazebo-label-system" name="ignition::gazebo::systems::Label">
+      <label>{art['label']}</label>
+    </plugin>
   </model>
 </sdf>
 '''
