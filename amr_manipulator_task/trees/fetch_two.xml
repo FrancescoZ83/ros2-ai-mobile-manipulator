@@ -1,0 +1,70 @@
+<?xml version="1.0"?>
+<!--
+  A mission of two orders: each order is an article of a slot of a shelf unit that goes to a bin of the packing table, one after the other
+  (o1 and o2 in the blackboard: slot, class, bin, alt = the other bin to try). FetchOne is the tree of fetch_and_deliver.xml (retries of the
+  drive and of the pick, the other bin, the safe end). An order that fails does not stop the next one (ForceSuccess); AllDelivered says
+  whether both articles are in a bin, and only then the mission succeeds. A SubTree of BehaviorTree.CPP 3 maps the keys of its own scope to
+  keys of the parent with the name of the parent's key WITHOUT braces.
+-->
+<root main_tree_to_execute="TwoOrders">
+  <BehaviorTree ID="TwoOrders">
+    <Sequence name="orders">
+      <ForceSuccess>
+        <SubTree ID="FetchOne" slot="o1_slot" article_class="o1_class" bin="o1_bin" alt_bin="o1_alt" nav_outcome="o1_nav"
+                 pick_outcome="o1_pick" carry_outcome="o1_carry" place_outcome="o1_place" final_outcome="o1_final"/>
+      </ForceSuccess>
+      <ForceSuccess>
+        <SubTree ID="FetchOne" slot="o2_slot" article_class="o2_class" bin="o2_bin" alt_bin="o2_alt" nav_outcome="o2_nav"
+                 pick_outcome="o2_pick" carry_outcome="o2_carry" place_outcome="o2_place" final_outcome="o2_final"/>
+      </ForceSuccess>
+      <AllDelivered first="{o1_place}" second="{o2_place}"/>
+    </Sequence>
+  </BehaviorTree>
+
+  <BehaviorTree ID="FetchOne">
+    <Fallback name="safe_end">
+      <Sequence name="fetch_and_deliver">
+        <RetryUntilSuccessful num_attempts="2">
+          <NavigateTo place="{slot}" outcome="{nav_outcome}"/>
+        </RetryUntilSuccessful>
+        <SubTree ID="PickWithRecovery" target_slot="slot" target_class="article_class" pick_result="pick_outcome"/>
+        <CarryArticle speed_scale="0.25" outcome="{carry_outcome}"/>
+        <SubTree ID="DeliverWithFallback" first_bin="bin" second_bin="alt_bin" place_result="place_outcome"/>
+        <Recover what="stow" outcome="{final_outcome}"/>
+      </Sequence>
+      <Sequence name="give_up">
+        <Recover what="release_and_stow" outcome="{final_outcome}"/>
+        <AlwaysFailure/>
+      </Sequence>
+    </Fallback>
+  </BehaviorTree>
+
+  <BehaviorTree ID="PickWithRecovery">
+    <Fallback name="pick_tries">
+      <PickArticle slot="{target_slot}" article_class="{target_class}" outcome="{pick_result}"/>
+      <Sequence name="again">
+        <Recover what="release_and_stow"/>
+        <PickArticle slot="{target_slot}" article_class="{target_class}" outcome="{pick_result}"/>
+      </Sequence>
+      <Sequence name="again_from_the_station">
+        <Recover what="release_and_stow"/>
+        <NavigateTo place="{target_slot}"/>
+        <PickArticle slot="{target_slot}" article_class="{target_class}" outcome="{pick_result}"/>
+      </Sequence>
+    </Fallback>
+  </BehaviorTree>
+
+  <BehaviorTree ID="DeliverWithFallback">
+    <Fallback name="bins">
+      <Sequence name="first_bin">
+        <NavigateTo place="{first_bin}"/>
+        <PlaceInBin bin="{first_bin}" outcome="{place_result}"/>
+      </Sequence>
+      <Sequence name="other_bin">
+        <CarryArticle speed_scale="0.25"/>
+        <NavigateTo place="{second_bin}"/>
+        <PlaceInBin bin="{second_bin}" outcome="{place_result}"/>
+      </Sequence>
+    </Fallback>
+  </BehaviorTree>
+</root>

@@ -75,8 +75,8 @@ sleep 30                                         # the arm goes to the travel po
 if [ -n "${NAV:-}" ]; then                      # NAV=1: AMCL and Nav2, the robot starts at the origin (the initial pose of AMCL)
   echo "== Nav2"
   NAVARGS=""
-  if [ "${NAVPARAMS:-}" = precise ]; then          # NAVPARAMS=precise: AMCL tighter (config/nav2_params_precise.yaml)
-    NAVARGS="params:=$(ros2 pkg prefix amr_manipulator_gazebo)/share/amr_manipulator_gazebo/config/nav2_params_precise.yaml"
+  if [ "${NAVPARAMS:-}" = precise ] || [ "${NAVPARAMS:-}" = gentle ]; then          # NAVPARAMS=precise: AMCL tighter (config/nav2_params_precise.yaml); gentle: and slower, for an article in the gripper
+    NAVARGS="params:=$(ros2 pkg prefix amr_manipulator_gazebo)/share/amr_manipulator_gazebo/config/nav2_params_${NAVPARAMS}.yaml"
   fi
   start nav ros2 launch amr_manipulator_gazebo nav.launch.py $NAVARGS
   wait_for "navigate_to_pose" 90 has_action navigate_to_pose

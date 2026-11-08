@@ -6,8 +6,32 @@ dataset/
 # Trained networks and their logs (kept out of the repository)
 amr_manipulator_perception/segmentation/runs/
 dataset_robot/
-# Throw-away diagnostic scripts: kept on disk, not in the repository
-scripts/grip_probe.py
-scripts/trace_joint.py
-scripts/grab_image.py
-scripts/travel_check.sh
+# Scripts: only the ones that run the scene and the mission are published (the demo, with everything they import);
+# the checks, the studies, the reports and the throw-away probes stay on disk. A new script that has to be published
+# needs a line here.
+scripts/*
+!scripts/arm_goto.py
+!scripts/arm_logger.py
+!scripts/dataset_common.py
+!scripts/drive_test.py
+!scripts/generate_world.py
+!scripts/grasp_geometry.py
+!scripts/grip.py
+!scripts/localization.py
+!scripts/make_dataset_free.py
+!scripts/map_check.py
+!scripts/mission.sh
+!scripts/mission_series.sh
+!scripts/mission_setup.py
+!scripts/moveit_check.py
+!scripts/nav_goto.py
+!scripts/nav_semantic.py
+!scripts/pick_oracle.py
+!scripts/pick_oracle.sh
+!scripts/pose_eval.py
+!scripts/semantic_goals.py
+!scripts/skill_server.py
+!scripts/stocker.py
+!scripts/tcp_pose.py
+!scripts/vision_target.py
+!scripts/warehouse_stock.py

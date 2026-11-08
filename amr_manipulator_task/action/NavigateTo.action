@@ -1,0 +1,8 @@
+# Drive to the station in front of a place and refine the localization there.
+string place              # a slot ("S1.L2.n1") or a bin ("bin_1")
+---
+bool success
+string outcome            # reached | failed
+float32 error_mm          # distance of the simulator's pose from the station
+---
+string stage

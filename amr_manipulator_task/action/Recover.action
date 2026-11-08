@@ -1,0 +1,7 @@
+# Put the arm in a safe state.
+string what               # release_and_stow (open the gripper, travel pose) | stow (travel pose, article kept)
+---
+bool success
+string outcome
+---
+string stage

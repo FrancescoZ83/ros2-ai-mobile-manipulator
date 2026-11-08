@@ -1,0 +1,10 @@
+# At the station of the bin, with the article carried: over the bin, release, back.
+string bin                # bin_1 | bin_2
+---
+bool success
+string outcome            # delivered | missed | lost_in_drive | no_place_pose | preplace_failed | drop_line_failed | article_lost
+float32 x
+float32 y
+float32 z                 # where the simulator has the article afterwards
+---
+string stage

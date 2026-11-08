@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>amr_manipulator_task</name>
+  <version>0.1.0</version>
+  <description>Task logic: a BehaviorTree.CPP mission that calls the skills (navigate, pick, carry, place) of the skill server</description>
+  <maintainer email="francesco.zeolla.3@gmail.com">Francesco Zeolla</maintainer>
+  <license>TODO</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>rosidl_default_generators</buildtool_depend>
+
+  <depend>rclcpp</depend>
+  <depend>rclcpp_action</depend>
+  <depend>ament_index_cpp</depend>
+  <depend>behaviortree_cpp_v3</depend>
+  <exec_depend>rosidl_default_runtime</exec_depend>
+  <exec_depend>rclpy</exec_depend>
+  <member_of_group>rosidl_interface_packages</member_of_group>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

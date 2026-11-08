@@ -1,0 +1,10 @@
+# From the station of the slot: look (images), pre-grasp, approach, close, retreat.
+string slot
+string article_class
+---
+bool success
+string outcome            # success | vision_failed | pregrasp_failed | approach_failed | empty | lost | no_article
+float32 article_to_tcp_mm # how far the article is from where it should be in the gripper
+float32 tilt_deg
+---
+string stage

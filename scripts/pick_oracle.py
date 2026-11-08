@@ -25,7 +25,7 @@ import numpy as np
 import rclpy
 import yaml
 from geometry_msgs.msg import Pose, Twist, TransformStamped
-from moveit_msgs.msg import CollisionObject, PlanningScene, PlanningSceneComponents
+from moveit_msgs.msg import AttachedCollisionObject, CollisionObject, PlanningScene, PlanningSceneComponents
 from moveit_msgs.srv import ApplyPlanningScene, GetPlanningScene
 from shape_msgs.msg import SolidPrimitive
 from std_msgs.msg import Float64MultiArray
@@ -58,6 +58,17 @@ LOOK_DISTS = (0.30, 0.26, 0.22, 0.38)
 SEEN_RADIUS = 0.05          # [m] a detection belongs to a slot of the face when it is this close to it once the shift is applied (the jitter of the
                              # stock is 14 mm, the error of the estimate a few more)
 SCENE_MARGIN = 0.004         # [m] the articles are a little bigger in the planning scene than they are
+PLACE_GAP = 0.15             # [m] platform - table at the packing table: from here the whole drop line over the bin is within reach (place_check.py)
+PLACE_BACK = 0.10            # [m] the pre-place pose is this far before the drop point, on the line
+PLACE_MARGIN = 0.03          # [m] the lowest point of the article is this far over the rim of the bin at the drop
+PLACE_DXS = (-0.04, -0.08, 0.0)  # [m] the drop point is this far from the centre of the bin, towards the robot, the first that has a pre-place pose with a complete line
+# postures of the pre-place poses that gave a complete line (wrist 1 turned the long way, as at the shelves); with only the two default seeds the IK found the other branch
+PLACE_SEEDS = ([-0.35, -1.27, 1.2, -3.07, -1.17, -1.571], [-3.0, -1.88, -1.2, -0.07, 1.47, -1.571])
+HELD_CARRY = 0.12            # [m] a bottle gripped above its centre swings about the pads when the tool turns to the travel pose (it hung 76 mm from where it was
+                             # gripped and came back); the article is lost only when it is farther than this from the TCP or the gripper says it is empty
+HELD_ARRIVED = 0.06          # [m] at the table, with the tool horizontal again, it has to be near where it was gripped for the drop height to be right
+CARRY_SCALE = 0.25           # speed scale of the arm with an article in the gripper: at 0.5 a bottle slipped out of the pads on the way to the travel pose
+BIN_RIM = 0.87               # [m] top of the walls of a bin
 MOVED = 0.01                 # [m] a neighbour that moved more than this was disturbed
 
 
@@ -147,6 +158,8 @@ class Picker:
         self.shift = np.zeros(2)                                  # with --localize: the shift of the believed map found from the images (x, y)
         self.world_base = None                                    # the objects of the scene as move_group had them, before any shift
         self.scene_ids = []
+        self.carry_scale = CARRY_SCALE                            # speed scale of the arm with an article in the gripper
+        self.navigator = None                                     # a nav2_simple_commander BasicNavigator, made when the first drive is asked for
         # A zero velocity command all the time, as Nav2 sends when it is not driving: the wheels hold the base while the arm swings
         self.cmd_vel = self.arm.create_publisher(Twist, '/cmd_vel', 10)
         self.arm.create_timer(0.05, lambda: self.cmd_vel.publish(Twist()))
@@ -609,6 +622,194 @@ class Picker:
             'extra': sorted(n for n in taken if n not in stock and n != rec['slot'])}
         return scene
 
+    def navigate(self, name, x, y, yaw, timeout=200.0):
+        """Drive to a pose of the map with Nav2 (nav_goto.run_goal): the dict of its measurements."""
+        import nav_goto
+        from nav2_simple_commander.robot_navigator import BasicNavigator
+        from rclpy.parameter import Parameter
+        if self.navigator is None:
+            self.navigator = BasicNavigator()
+            self.navigator.set_parameters([Parameter('use_sim_time', Parameter.Type.BOOL, True)])
+            self.nav_buffer = Buffer()
+            TransformListener(self.nav_buffer, self.navigator)
+        return nav_goto.run_goal(self.navigator, self.nav_buffer, name, x, y, yaw, timeout)
+
+    def attach_article(self, rec, cls, dz, attach=True):
+        """The article in the gripper as an object attached to the TCP in the planning scene of MoveIt (a box of its size, its centre
+        dz below the TCP; the tool x axis is up, y across the fingers, z the approach), so that the paths of the carry do not sweep
+        it through the shelf or the bin. attach=False takes it away (it has been released)."""
+        if cls['shape'] == 'box':
+            width, depth, height = cls['size']
+        else:
+            width = depth = 2 * cls['size'][0]
+            height = cls['size'][1]
+        aco = AttachedCollisionObject(link_name='gripper_tcp', touch_links=['gripper_tcp', 'gripper_base_link', 'gripper_left_finger_link', 'gripper_right_finger_link'])
+        aco.object.id = 'held_' + rec['name']
+        aco.object.header.frame_id = 'gripper_tcp'
+        if attach:
+            aco.object.operation = CollisionObject.ADD
+            aco.object.primitives.append(SolidPrimitive(type=SolidPrimitive.BOX, dimensions=[height + 2 * SCENE_MARGIN, width + 2 * SCENE_MARGIN, depth + 2 * SCENE_MARGIN]))
+            pose = Pose()
+            pose.position.x = -dz
+            pose.orientation.w = 1.0
+            aco.object.primitive_poses.append(pose)
+        else:
+            aco.object.operation = CollisionObject.REMOVE
+        scene = PlanningScene(is_diff=True)
+        scene.robot_state.is_diff = True
+        scene.robot_state.attached_collision_objects.append(aco)
+        if not attach:                                            # REMOVE of an attached object only detaches it: it stays in the world where it was
+            gone = CollisionObject(id=aco.object.id, operation=CollisionObject.REMOVE)
+            gone.header.frame_id = 'map'
+            scene.world.collision_objects.append(gone)
+        future = self.apply_scene.call_async(ApplyPlanningScene.Request(scene=scene))
+        rclpy.spin_until_future_complete(self.arm, future, timeout_sec=10.0)
+
+    def held_distance(self, rec, height, dz):
+        """Distance [mm] of the centre of the article from where it is when held (dz behind the TCP along the tool x axis, which is up at
+        the grasp), from the simulator, or None."""
+        state = entity_state(rec['name'])
+        if state is None:
+            return None
+        origin, q = state
+        centre = origin + geo.quat_to_matrix(q) @ np.array([0.0, 0.0, height / 2.0])
+        pos, quat = self.arm.forward(self.arm.current())
+        r, t = self.gt_map_to_base()
+        up_in_tool = r.T @ (geo.quat_to_matrix(quat) @ np.array([1.0, 0.0, 0.0]))     # the tool x axis, in the map: up at the grasp, not in the travel pose
+        return round(1000 * float(np.linalg.norm(centre - (self.tcp_in_map() - dz * up_in_tool))), 1)
+
+    def carry(self, rec, cls, dz):
+        """The article in the gripper goes to the carrying pose: it is attached to the TCP in the scene, the arm goes to the travel pose
+        and the simulator says whether it is still held. Returns a dict with `held` and `outcome` ('carrying' or 'lost_in_carry')."""
+        height = cls['size'][2] if cls['shape'] == 'box' else cls['size'][1]
+        res = {}
+        self.set_scene_articles([], None)                         # nothing of the shelves is of interest any more
+        self.attach_article(rec, cls, dz)
+        goal, _ = self.arm.execute(self.stow, self.carry_scale)
+        self.spin(1.0)
+        res['code'] = goal.result.error_code.val
+        res['article_to_tcp_mm'] = self.held_distance(rec, height, dz)
+        res['rel'] = self.relative_state(rec['name'], height, (1.0, 0.0, 0.0))          # where it is in the pads: depth (towards the table), across, up, tilt
+        res['gripper'] = self.state()
+        res['held'] = not (res['article_to_tcp_mm'] is None or res['article_to_tcp_mm'] > 1000 * HELD_CARRY or res['gripper'] != 'GRASP')   # it slipped out while the arm moved
+        res['outcome'] = 'carrying' if res['held'] else 'lost_in_carry'
+        return res
+
+    def bin_station(self, bin_name):
+        """(x, y, yaw) in front of a bin of the packing table, the platform PLACE_GAP from the table: the arm reaches the bin straight ahead."""
+        b = self.sem['bins'][bin_name]
+        tx, _, tyaw = sg.table_station(self.sem, b['table'], PLACE_GAP)
+        return tx, b['pose'][1], tyaw
+
+    def place(self, rec, cls, dz, bin_name):
+        """At the station of the bin, with the article carried: the article over the bin (straight line at the height where it clears the
+        rim), the gripper opens, the arm goes back. Returns a dict; `outcome` is 'delivered' if the simulator has the article inside the bin."""
+        height = cls['size'][2] if cls['shape'] == 'box' else cls['size'][1]
+        b = self.sem['bins'][bin_name]
+        res = {'bin': bin_name}
+        res['article_to_tcp_mm_arrived'] = self.held_distance(rec, height, dz)
+        res['rel_arrived'] = self.relative_state(rec['name'], height, (1.0, 0.0, 0.0))
+        if res['article_to_tcp_mm_arrived'] is None or res['article_to_tcp_mm_arrived'] > 1000 * HELD_ARRIVED:     # it slipped out in the drive
+            res['outcome'] = 'lost_in_drive'
+            return res
+        self.sync_map_odom()
+        if self.world_base is not None:                           # the shift found at the shelf does not hold here
+            self.shift = np.zeros(2)
+            self.shift_world(self.shift)
+        normal = (-1.0, 0.0)
+        approach_map, rot_map = grasp_axes('front', normal, 0.0, 'x')
+        r, t = self.map_to_base()
+        quat = matrix_to_quat((r @ np.array(rot_map)).tolist())
+        res['tries'] = []
+        for dx in PLACE_DXS:
+            centre_map = np.array([b['pose'][0] + dx, b['pose'][1], BIN_RIM + PLACE_MARGIN + height / 2.0 + dz])
+            centre = r @ centre_map + t
+            candidates = look_candidates(self.arm, tuple(centre_map), normal, PLACE_BACK, extra_seeds=PLACE_SEEDS)
+            ranked, report = self.choose_pregrasp(candidates, centre, quat)
+            res['tries'].append({'drop_dx': dx, 'ik': len(candidates), 'complete': len(ranked)})
+            if ranked:
+                res['candidates'] = report
+                break
+        if not ranked:
+            res['outcome'] = 'no_place_pose'
+            return res
+        codes = []
+        for joints in ranked[:3]:
+            for _ in range(3):
+                goal, _ = self.arm.execute(joint_constraints(joints), self.carry_scale)
+                codes.append(goal.result.error_code.val)
+                if codes[-1] == 1:
+                    break
+            if codes[-1] == 1:
+                break
+        res['preplace'] = codes
+        if codes[-1] != 1:
+            res['outcome'] = 'preplace_failed'
+            return res
+        ok, res['drop_line'] = self.line_to(centre, quat, self.carry_scale)
+        if not ok:
+            res['outcome'] = 'drop_line_failed'
+            return res
+        res['robot_gt'] = np.round(robot_gt(), 4).tolist()
+        self.command(close=False)
+        self.wait_state(('OPEN',), 4.0)
+        self.attach_article(rec, cls, dz, attach=False)
+        self.spin(2.0)                                            # it falls and settles
+        after = entity_state(rec['name'])
+        ok_back, res['back_line'] = self.line_to(centre - PLACE_BACK * (r @ np.array(approach_map)), quat, self.carry_scale)
+        if after is None:
+            res['outcome'] = 'article_lost'
+            return res
+        x, y, z = after[0]
+        res['article'] = [round(float(x), 3), round(float(y), 3), round(float(z), 3)]
+        inside = abs(x - b['pose'][0]) < 0.15 and abs(y - b['pose'][1]) < 0.15 and 0.74 < z < BIN_RIM
+        res['outcome'] = 'delivered' if inside else 'missed'
+        return res
+
+    def carry_laps(self, rec, cls, dz, bin_name, laps):
+        """Carry the article between the station of its slot and the station of the bin `laps` times (2 drives each) and note, after every
+        drive, how far it is from where it is held and what the gripper says: does it slip, or does it fall at once? A test of the drive."""
+        height = cls['size'][2] if cls['shape'] == 'box' else cls['size'][1]
+        out = {'carry': self.carry(rec, cls, dz), 'legs': []}
+        if not out['carry']['held']:
+            out['outcome'] = 'lost_in_carry'
+            return out
+        stops = ((bin_name, self.bin_station(bin_name)), (rec['slot'], sg.resolve(self.sem, None, rec['slot'])[1]))
+        for lap in range(laps):
+            for name, station in stops:
+                row = self.navigate(name, *station)
+                self.spin(1.0)
+                leg = {'to': name, 'result': row['result'].name, 'time_s': round(row['time'], 1), 'path_m': round(row['length'], 2),
+                       'article_to_tcp_mm': self.held_distance(rec, height, dz), 'gripper': self.state(),
+                       'width_mm': round(1000 * self.gripper[6], 1) if self.gripper else None,
+                       'force_N': [round(self.gripper[4], 1), round(self.gripper[5], 1)] if self.gripper else None,
+                       'rel': self.relative_state(rec['name'], height, (1.0, 0.0, 0.0))}
+                out['legs'].append(leg)
+                print(f"   leg {len(out['legs'])} to {name}: {leg['result']}, article {leg['article_to_tcp_mm']} mm from where it is held, gripper {leg['gripper']}, width {leg['width_mm']}", flush=True)
+                if leg['article_to_tcp_mm'] is None or leg['article_to_tcp_mm'] > 1000 * HELD_ARRIVED or leg['gripper'] != 'GRASP':
+                    out['outcome'] = 'lost'
+                    return out
+        out['outcome'] = 'kept'
+        return out
+
+    def deliver(self, rec, cls, dz, bin_name):
+        """carry, Nav2 to the bin, place: a dict with what each step gave and `outcome`."""
+        res = {'bin': bin_name, 'carry': self.carry(rec, cls, dz)}
+        if not res['carry']['held']:
+            res['outcome'] = 'lost_in_carry'
+            return res
+        row = self.navigate(f'{bin_name} station', *self.bin_station(bin_name))
+        res['drive'] = {'result': row['result'].name, 'time_s': round(row['time'], 1), 'path_m': round(row['length'], 2),
+                        'error_mm': [round(1000 * row['along'], 1), round(1000 * row['across'], 1)], 'yaw_deg': round(row['err_yaw'], 1)}
+        if row['result'].name != 'SUCCEEDED':
+            res['outcome'] = 'drive_failed'
+            return res
+        res['localization'] = self.refine_localization(5)
+        res.update(self.place(rec, cls, dz, bin_name))
+        res['carry']['article_to_tcp_mm_arrived'] = res.pop('article_to_tcp_mm_arrived')
+        res['carry']['rel_arrived'] = res.pop('rel_arrived')
+        return res
+
     def grasp_frame(self, rec, slot):
         """(approach direction, rotation matrix) of the tool in the map. The approach is straight into the shelf; with --align-yaw
         a box is approached turned by its yaw, so that the pads close on two of its faces and not on two corners."""
@@ -724,7 +925,7 @@ class Picker:
         grid = [{'slot': n, 'x': s['pose'][0], 'y': s['pose'][1]} for n, s in self.sem['slots'].items()
                 if (s['shelf'], s['level'], s['face']) == (slot['shelf'], slot['level'], slot['face'])]
         if self.opt['inventory_images']:                          # the class of the other slots is read from the image, not taken from the stock
-            found = localize_images(detections, grid, rec['slot'], self.by_name[rec['class']]['label'], normal)
+            found = localize_images(detections, grid, rec['slot'], self.by_name[rec.get('ordered_class', rec['class'])]['label'], normal)      # the class that was asked for, not the true one
             if 'inventory' in found:
                 labels = {c['label']: c['name'] for c in self.by_name.values()}
                 stock = {r['slot']: r['class'] for r in records}
@@ -809,6 +1010,8 @@ def main():
     ap.add_argument('--yaw-error-deg', type=float, default=0.0, help='with --align-yaw: the approach is turned by the yaw of the box plus this error [degrees] (an estimate of the yaw that is off)')
     ap.add_argument('--scene-images', action='store_true', help='with --localize: the neighbours in the planning scene are the articles that the image shows (scene_from_images), not the stock of the simulator; before the first look only the article to pick is in the scene')
     ap.add_argument('--inventory-images', action='store_true', help='with --localize: the class in each slot is read from the image (localization.localize_images) and not taken from the stock; only the class of the article to pick is given')
+    ap.add_argument('--deliver', help='with --nav and a held article: carry it to this bin (bin_1, bin_2; several separated by commas: one is drawn) of the packing table and drop it there')
+    ap.add_argument('--carry-laps', type=int, default=0, help='with --deliver: instead of the delivery, drive this many times between the station of the slot and the one of the bin with the article held, noting after each drive whether it is still held')
     ap.add_argument('--alone', action='store_true', help='one article on the shelves, no neighbours')
     ap.add_argument('--classes', nargs='+', help='only these classes are picked (with --alone also the only ones on the shelves; otherwise the neighbours are of any class)')
     ap.add_argument('--levels', nargs='+', type=int, help='only articles at these shelf levels (1, 2, 3) are picked')
@@ -833,6 +1036,8 @@ def main():
     ap.add_argument('--map', default=os.path.join(sg.GAZEBO, 'config', 'semantic_map.yaml'))
     ap.add_argument('--articles', default=os.path.join(sg.GAZEBO, 'config', 'articles.yaml'))
     args = ap.parse_args()
+    if args.deliver and not args.nav:
+        ap.error('--deliver needs --nav: the robot drives to the packing table')
     if args.scene_images and not args.localize:
         ap.error('--scene-images needs --localize: the articles come from the detections')
     if args.localize and not args.nav:
@@ -902,6 +1107,14 @@ def main():
                   + ' '.join(f'{k}={out[k]}' for k in ('grip_state', 'width_mm', 'article_to_tcp_mm', 'tilt_deg', 'lifted_mm', 'neighbours_moved') if k in out),
                   flush=True)
             json.dump(results, open(args.out, 'w'), indent=1)
+            if args.deliver and args.carry_laps and out['outcome'] == 'success':
+                out['laps'] = picker.carry_laps(rec, picker.by_name[rec['class']], out['grasp_dz'], args.deliver.split(',')[0], args.carry_laps)
+                print(f'   laps: {out["laps"]["outcome"]}', flush=True)
+                json.dump(results, open(args.out, 'w'), indent=1)
+            elif args.deliver and out['outcome'] == 'success':
+                out['deliver'] = picker.deliver(rec, picker.by_name[rec['class']], out['grasp_dz'], picker.rng.choice(args.deliver.split(',')))
+                print(f'   delivery: {out["deliver"]["outcome"]}', flush=True)
+                json.dump(results, open(args.out, 'w'), indent=1)
             picker.spin(args.hold)
             failures = 0 if out['outcome'] == 'success' else failures + 1
             if failures >= 8:

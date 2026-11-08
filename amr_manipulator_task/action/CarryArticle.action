@@ -1,0 +1,8 @@
+# With the article in the gripper: it is attached to the TCP in the planning scene, the arm goes to the travel pose, held is checked.
+float32 speed_scale       # speed scale of the arm, 0 = the default of the server
+---
+bool success
+string outcome            # carrying | lost_in_carry | no_article
+float32 article_to_tcp_mm
+---
+string stage
