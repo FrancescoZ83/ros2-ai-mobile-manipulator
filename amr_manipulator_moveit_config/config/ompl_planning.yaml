@@ -15,3 +15,7 @@ arm:
   default_planner_config: RRTConnect
   planner_configs: [RRTConnect, RRTstar, PRM, BiTRRT]
   projection_evaluator: joints(ur_shoulder_pan_joint,ur_shoulder_lift_joint)
+  # The boards of the shelves are 3 cm thick: with the default step of the validity check (0.01 of the extent of the joint
+  # space, about 8 cm of a fingertip at the end of the arm) a path can go through a board between two checked states; the
+  # planning pipeline then finds the path invalid and returns -2 (README, Nav2 series with the station in front of the slot)
+  longest_valid_segment_fraction: 0.001

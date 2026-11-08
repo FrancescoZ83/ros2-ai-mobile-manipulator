@@ -51,9 +51,11 @@ def real_time_factor():
     return float(found.group(1)) if found else None
 
 
-def create(name, model, x, y, z, yaw=0.0):
-    """A static copy of model://<model> called name, standing at (x, y, z) with the given yaw."""
-    sdf = (f"<sdf version='1.8'><include><uri>model://{model}</uri><name>{name}</name><static>true</static>"
+def create(name, model, x, y, z, yaw=0.0, static=True):
+    """A copy of model://<model> called name, standing at (x, y, z) with the given yaw.
+
+    Static by default: it cannot be pushed or lifted, and nothing makes it fall. static=False makes a dynamic body."""
+    sdf = (f"<sdf version='1.8'><include><uri>model://{model}</uri><name>{name}</name><static>{'true' if static else 'false'}</static>"
            f"<pose>{x:.4f} {y:.4f} {z:.4f} 0 0 {yaw:.4f}</pose></include></sdf>")
     return call('create', 'ignition.msgs.EntityFactory', f'sdf: "{sdf}"')
 

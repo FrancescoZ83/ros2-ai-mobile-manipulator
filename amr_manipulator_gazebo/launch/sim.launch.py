@@ -179,7 +179,8 @@ def generate_launch_description():
         description="'false' leaves the arm in the start-up pose (home90) for manipulation tests")
     arm_goto = os.path.normpath(os.path.join(
         os.path.dirname(os.path.realpath(__file__)), '..', '..', 'scripts', 'arm_goto.py'))
-    travel_pose = ['3.1416', '-1.5708', '1.5708', '-1.5708', '-1.5708', '1.5708']
+    # the arm stands folded upright over the chassis, the camera at 1.13 m looking forward (same values as the SRDF state `travel`)
+    travel_pose = ['0.74', '-1.72', '-0.69', '-0.54', '-2.36', '1.66']
     if os.path.isfile(arm_goto):
         stow = ExecuteProcess(
             cmd=['python3', '-u', arm_goto, '--goal', *travel_pose, '--time', '6'],

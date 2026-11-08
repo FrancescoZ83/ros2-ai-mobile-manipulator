@@ -20,13 +20,18 @@ def generate_launch_description():
     # behaviors, BT navigator, velocity smoother) with our parameters. The simulation is a
     # separate launch (sim.launch.py). Do not run it together with slam.launch.py: both
     # would publish the transform map -> odom.
+    params_arg = DeclareLaunchArgument(
+        'params',
+        default_value=os.path.join(gz_share, 'config', 'nav2_params.yaml'),
+        description='Nav2 parameters (config/nav2_params_precise.yaml: AMCL tighter, for the stations)')
+
     bringup = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(os.path.join(bringup_share, 'launch', 'bringup_launch.py')),
         launch_arguments={
             'map': LaunchConfiguration('map'),
-            'params_file': os.path.join(gz_share, 'config', 'nav2_params.yaml'),
+            'params_file': LaunchConfiguration('params'),
             'use_sim_time': 'true',
             'autostart': 'true',
         }.items(),
     )
-    return LaunchDescription([map_arg, bringup])
+    return LaunchDescription([map_arg, params_arg, bringup])

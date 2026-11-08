@@ -23,7 +23,7 @@ def main():
     ap.add_argument('--tour', choices=sorted(TOURS), help='visit a predefined list of places instead')
     ap.add_argument('--map', default=os.path.join(sg.GAZEBO, 'config', 'semantic_map.yaml'))
     ap.add_argument('--sdf', default=os.path.join(sg.GAZEBO, 'worlds', 'warehouse.sdf'))
-    ap.add_argument('--gap', type=float, default=0.25, help='free distance platform - shelf face / bench [m]')
+    ap.add_argument('--gap', type=float, default=None, help=f'free distance platform - shelf face / bench [m] (default {sg.SHELF_GAP} at a shelf, {sg.TABLE_GAP} at a bench)')
     ap.add_argument('--along', action='store_true', help='bow along the aisle (yaw 0) instead of towards the shelf')
     ap.add_argument('--timeout', type=float, default=150.0, help='wall-clock seconds allowed per goal')
     ap.add_argument('--repeat', type=int, default=1, help='visit the whole list this many times')

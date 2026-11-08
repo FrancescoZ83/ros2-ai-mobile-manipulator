@@ -19,12 +19,16 @@ limits:
 #   rects  [u0, v0, u1, v1, colour] drawn in order
 #   badge  circle {center, radius (fraction of the width), color, dots {color, n}}
 #   noise  standard deviation of the gaussian pixel noise (0-255 scale)
+# grasp_dz: how much above the centre of the article the fingers are put. A cylinder held at its centre of mass tilts
+# in the retreat; 22 percent of the height above it hangs straight (bottle 0.04, soup can 0.02, jam jar 0.015). The boxes
+# are better at the centre (0.0), parcel not measured.
 articles:
   - name: cereal_box
     label: 1          # class id in the segmentation images (0 = background)
     shape: box
     size: [0.070, 0.050, 0.160]        # x, y, z
     mass: 0.25
+    grasp_dz: 0.0                   # [m] the grasp point above the centre of the article (README, grasp: measured on the cylinders)
     texture:
       base: "#e8b630"
       rects:
@@ -38,6 +42,7 @@ articles:
     shape: box
     size: [0.060, 0.060, 0.170]
     mass: 0.35
+    grasp_dz: 0.0                   # [m] the grasp point above the centre of the article (README, grasp: measured on the cylinders)
     texture:
       base: "#f4f1e6"
       rects:
@@ -51,6 +56,7 @@ articles:
     shape: cylinder
     size: [0.033, 0.100]               # radius, height
     mass: 0.40
+    grasp_dz: 0.02                   # [m] the grasp point above the centre of the article (README, grasp: measured on the cylinders)
     texture:
       base: "#f4f0e8"
       rects:
@@ -64,6 +70,7 @@ articles:
     shape: cylinder
     size: [0.030, 0.180]
     mass: 0.30
+    grasp_dz: 0.04                   # [m] the grasp point above the centre of the article (README, grasp: measured on the cylinders)
     texture:
       base: "#7fc4e6"
       rects:
@@ -77,6 +84,7 @@ articles:
     shape: box
     size: [0.060, 0.080, 0.090]
     mass: 0.15
+    grasp_dz: 0.0                   # [m] the grasp point above the centre of the article (README, grasp: measured on the cylinders)
     texture:
       base: "#b98a56"
       rects:
@@ -91,6 +99,7 @@ articles:
     shape: cylinder
     size: [0.035, 0.075]
     mass: 0.30
+    grasp_dz: 0.015                   # [m] the grasp point above the centre of the article (README, grasp: measured on the cylinders)
     texture:
       base: "#8e2f6b"
       rects:

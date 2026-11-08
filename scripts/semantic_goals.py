@@ -3,6 +3,7 @@
 import argparse
 import math
 import os
+import random
 
 import yaml
 
@@ -12,6 +13,10 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 GAZEBO = os.path.join(HERE, '..', 'amr_manipulator_gazebo')
 
 # Platform footprint in base_footprint, measured with robot_geometry.py (same polygon as nav2_params.yaml)
+# Free distance between the platform and the shelf face at a pick station: 0.30 m reaches all 105 slots and gives the arm
+# natural postures at levels 1 and 2 (README, 7.4; 0.25 m was the first choice and loses the centre slot of level 1)
+SHELF_GAP = 0.30
+TABLE_GAP = 0.25
 FOOTPRINT = [(-0.4, -0.25), (-0.1, -0.315), (0.1, -0.315), (0.4, -0.25),
              (0.4, 0.25), (0.1, 0.315), (-0.1, 0.315), (-0.4, 0.25)]
 HALF_WIDTH = 0.315      # [m] side of the platform from the centre line
@@ -73,14 +78,35 @@ def open_spot(sem, boxes, zone, margin=0.5):
     return best[1], best[2], 0.0
 
 
-def resolve(sem, boxes, name, gap=0.25, facing=True):
-    """(kind, (x, y, yaw)) for a name of the semantic map."""
+def slot_station(sem, name, gap=None):
+    """Pose (x, y, yaw) in front of one slot ('S1.L3.n5'): the station of its unit moved along the aisle to the slot.
+
+    At the centre of the unit the end slots of level 3 are at 0.4 m to the side, at the limit of what the arm reaches: an
+    arrival error of 4 to 8 cm towards the outside leaves no complete straight approach (README, 7.4)."""
+    x, y, yaw = shelf_station(sem, sem['slots'][name]['shelf'], SHELF_GAP if gap is None else gap, True)
+    return sem['slots'][name]['pose'][0], y, yaw
+
+
+def draw_slot(sem, unit, seed, max_offset=0.8):
+    """A pickable slot of the unit, drawn from the seed: the same for the same seed, so that the station can be chosen
+    (and the robot driven there) before the stock is made."""
+    shelf_x = sem['shelves'][unit]['pose'][0]
+    names = sorted(n for n, s in sem['slots'].items() if s['shelf'] == unit and s['pickable'] and abs(s['pose'][0] - shelf_x) <= max_offset)
+    return random.Random(f'slot{seed}').choice(names)
+
+
+def resolve(sem, boxes, name, gap=None, facing=True):
+    """(kind, (x, y, yaw)) for a name of the semantic map. gap: free distance platform - shelf face / bench [m];
+    by default SHELF_GAP in front of a shelf and TABLE_GAP at a bench. A slot name ('S1.L3.n5') gives the station in
+    front of that slot, always facing the shelf."""
+    if name in sem['slots']:
+        return 'slot', slot_station(sem, name, gap)
     if name in sem['shelves']:
-        return 'shelf', shelf_station(sem, name, gap, facing)
+        return 'shelf', shelf_station(sem, name, SHELF_GAP if gap is None else gap, facing)
     if name in sem['tables']:
-        return 'table', table_station(sem, name, gap)
+        return 'table', table_station(sem, name, TABLE_GAP if gap is None else gap)
     if name in sem['bins']:
-        return 'bin', table_station(sem, sem['bins'][name]['table'], gap)
+        return 'bin', table_station(sem, sem['bins'][name]['table'], TABLE_GAP if gap is None else gap)
     if name in sem['doors']:
         x, y = sem['doors'][name]['pose']
         return 'door', (x, y, 0.0)
@@ -115,7 +141,7 @@ def main():
     ap.add_argument('names', nargs='*', help='names to resolve (default: all)')
     ap.add_argument('--map', default=os.path.join(GAZEBO, 'config', 'semantic_map.yaml'))
     ap.add_argument('--sdf', default=os.path.join(GAZEBO, 'worlds', 'warehouse.sdf'))
-    ap.add_argument('--gap', type=float, default=0.25, help='free distance platform - shelf face / bench [m]')
+    ap.add_argument('--gap', type=float, default=None, help=f'free distance platform - shelf face / bench [m] (default {SHELF_GAP} at a shelf, {TABLE_GAP} at a bench)')
     ap.add_argument('--along', action='store_true', help='bow along the aisle (yaw 0) instead of towards the shelf')
     ap.add_argument('--plane', type=float, default=0.275, help='LiDAR height [m]')
     args = ap.parse_args()

@@ -62,13 +62,14 @@ class Capture(Node):
                     return frame['image'], frame['labels'][:, :, 0], stamp
         return None
 
-    def camera_pose(self, stamp, timeout=10.0):
-        """Position and quaternion (x, y, z, w) of the optical frame of the left camera in the map, at the time of a frame."""
+    def camera_pose(self, stamp, timeout=10.0, frame='map'):
+        """Position and quaternion (x, y, z, w) of the optical frame of the left camera in `frame` (the map, or
+        base_footprint: then only the transforms of the arm count), at the time of a frame."""
         when = rclpy.time.Time(seconds=stamp[0], nanoseconds=stamp[1], clock_type=rclpy.clock.ClockType.ROS_TIME)
         end = time.monotonic() + timeout       # this node spins only when asked: let the transforms come in
-        while time.monotonic() < end and not self.tf_buffer.can_transform('map', 'stereo_left_optical_frame', when):
+        while time.monotonic() < end and not self.tf_buffer.can_transform(frame, 'stereo_left_optical_frame', when):
             rclpy.spin_once(self, timeout_sec=0.1)
-        t = self.tf_buffer.lookup_transform('map', 'stereo_left_optical_frame', when).transform
+        t = self.tf_buffer.lookup_transform(frame, 'stereo_left_optical_frame', when).transform
         return ([t.translation.x, t.translation.y, t.translation.z],
                 [t.rotation.x, t.rotation.y, t.rotation.z, t.rotation.w])
 

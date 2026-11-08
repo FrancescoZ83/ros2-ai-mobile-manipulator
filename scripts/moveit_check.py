@@ -130,9 +130,14 @@ class Checker(Node):
             raise SystemExit('check_state_validity did not answer')
         return res.valid, sorted({(c.contact_body_1, c.contact_body_2) for c in res.contacts})
 
-    def straight_line(self, pos, quat, target, scale, max_jump=0.5):
-        """Time-parameterized straight TCP path from the current state to target: (response, joints of the points)."""
+    def straight_line(self, pos, quat, target, scale, max_jump=0.5, start=None):
+        """Time-parameterized straight TCP path from the current state (or, with `start`, from those arm joints, the rest
+        of the state as it is now) to target: (response, joints of the points)."""
         req = GetCartesianPath.Request()
+        if start is not None:
+            req.start_state.is_diff = True
+            req.start_state.joint_state.name = JOINTS
+            req.start_state.joint_state.position = [float(v) for v in start]
         req.header.frame_id = FRAME
         req.group_name = 'arm'
         req.link_name = LINK
@@ -319,8 +324,9 @@ def normalised(q):
     return out
 
 
-def look_solution(node, center, normal, dist, offset=(0.0, 0.0, 0.0), tries=5):
-    """Joint values that put the TCP `dist` in front of `center` (map frame), tool horizontal into the shelf whose
+def look_candidates(node, center, normal, dist, offset=(0.0, 0.0, 0.0), tries=5, extra_seeds=()):
+    """All the collision-free joint solutions found (several tries from two seeds, each brought to its equivalent angles
+    closest to 0) that put the TCP `dist` in front of `center` (map frame), tool horizontal into the shelf whose
     pick face has the outward normal `normal`; `offset` moves the TCP target. None if there is no collision-free one.
 
     The IK restarts from random states when the seed is far from a solution, so it may return another branch,
@@ -329,14 +335,27 @@ def look_solution(node, center, normal, dist, offset=(0.0, 0.0, 0.0), tries=5):
     largest joint is taken."""
     approach, rot = grasp_axes('front', normal, 0.0, 'x')
     target = tuple(c - dist * a + o for c, a, o in zip(center, approach, offset))
-    seeds = [[0.0, -1.2, 1.6, -2.0, -1.5708, 1.5708], [0.0, -1.5708, 1.5708, -1.5708, -1.5708, 1.5708]]
+    seeds = [[0.0, -1.2, 1.6, -2.0, -1.5708, 1.5708], [0.0, -1.5708, 1.5708, -1.5708, -1.5708, 1.5708]] + [list(q) for q in extra_seeds]
     candidates = []
     for seed in seeds:
         for _ in range(tries):
             cand, _ = node.inverse(target, matrix_to_quat(rot), seed, timeout=0.5, avoid_collisions=True, frame='map')
             if cand is not None:
                 candidates.append(normalised(cand))
-    return min(candidates, key=lambda q: max(abs(v) for v in q)) if candidates else None
+    return candidates
+
+
+PAN_LIMIT = 1.6    # [rad] a base joint beyond this is the shoulder turned the other way round: the arm reaches over its back
+
+
+def look_solution(node, center, normal, dist, offset=(0.0, 0.0, 0.0), tries=5):
+    """The most comfortable of the look_candidates (the smallest largest joint) among those with the base joint within
+    +-PAN_LIMIT (all of them if there is none), or None."""
+    candidates = look_candidates(node, center, normal, dist, offset, tries)
+    if not candidates:
+        return None
+    candidates = [q for q in candidates if abs(q[0]) <= PAN_LIMIT] or candidates
+    return min(candidates, key=lambda q: max(abs(v) for v in q))
 
 
 def do_look(node, args):
