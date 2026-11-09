@@ -4,7 +4,9 @@ scripts/__pycache__/
 # Generated dataset (hundreds of MB): never committed
 dataset/
 # Trained networks and their logs (kept out of the repository)
-amr_manipulator_perception/segmentation/runs/
+amr_manipulator_perception/segmentation/runs/*
+# ...except the weights of the network the demo uses (7.8 MB)
+!amr_manipulator_perception/segmentation/runs/base.pt
 dataset_robot/
 # Scripts: only the ones that run the scene and the mission are published (the demo, with everything they import);
 # the checks, the studies, the reports and the throw-away probes stay on disk. A new script that has to be published
